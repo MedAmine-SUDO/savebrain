@@ -8,7 +8,9 @@ Turn your saved Instagram / Facebook posts into a private, filterable to-do list
 - **Daily Home** — what needs action, deadlines and fake-risk at a glance, plus a one-card-at-a-time **Daily Review**.
 - **Full analysis** for every save — summary, extracted steps, why it's urgent, trust signals, links and an action checklist.
 - **Fake detector** — every save is scored *Verified · Likely Legit · Check Claims · High Fake Risk*.
-- **Queue & reminders** — HIGH urgency and deadline items first; reminders can be added to your phone's calendar.
+- **Automatic deadline reminders** — when a post mentions an end date, expiring offer or closing registration, SaveBrain creates a reminder for the day before. One tap adds them to your phone's calendar, which alerts you the day before and on the day (or 2 hours before a given time).
+- **In the post's own language** — Meta AI writes each analysis in the language of the post (Arabic, French, English…), shown right-to-left when needed.
+- **Queue & reminders** — soonest deadlines and HIGH urgency first.
 - **Import from Meta AI** — copy a ready-made prompt, paste it into Meta AI, paste the reply back. Works daily with a Meta AI scheduled task.
 - Filters, search, CSV export, installable on Android, and **Connect another device** with a QR code.
 - **Your own private database** — every user connects their own free Supabase project. No shared backend, no key in this repo.
@@ -31,7 +33,12 @@ When it's done you can delete the access token on the Supabase tokens page.
 2. In Meta AI, ask it to run that prompt every morning as a scheduled task.
 3. Each morning, copy Meta AI's reply into **Import from Meta AI**. Links already in SaveBrain are skipped.
 
-Imported posts are marked “Check claims”: AI can make mistakes, so open the original link to confirm.
+AI can make mistakes, so open the original link to confirm before acting.
+
+## Deadline notifications
+SaveBrain has no server, so it can't push notifications by itself. Instead, press **Get notified — add to calendar**
+(Home or Reminders tab) and open the downloaded file: your phone's calendar then alerts you before each deadline,
+even when SaveBrain is closed. Do this after each import to include new deadlines.
 
 ## Security
 - The access token is used only during setup, only sent to `api.supabase.com`, and never stored.

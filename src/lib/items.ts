@@ -14,7 +14,9 @@ const FIELDS = `Reply with ONLY a JSON array: no intro, no explanation, no markd
   "category": "Area / Subarea, e.g. Jobs / Immigration, Learning / AI, Startup / Funding, AI Tools / Video",
   "urgency": "HIGH", "MEDIUM" or "LOW",
   "trust": "Verified", "Likely Legit", "Check Claims" or "High Fake Risk",
-  "deadline": "short text if there is a deadline, expiry or limited budget/spots (e.g. \\"Apply before credits end\\" or \\"2026-12-01\\"), otherwise \\"\\"",
+  "deadline": "short description of any time limit (offer ends, registration closes, link expires, limited spots or budget, early-bird price), otherwise \\"\\"",
+  "deadline_date": "the last day to act as YYYY-MM-DD if the post states or implies one; work out relative dates (\\"tomorrow\\", \\"ends Friday\\", \\"48 hours only\\") from the post's publish date. Otherwise \\"\\"",
+  "deadline_time": "the cut-off time as HH:MM (24h) if the post gives one, otherwise \\"\\"",
   "action": "the single next thing I should do, including the post's call to action (e.g. Comment \\"Guide\\" for the link)",
   "likes": "number of likes as text, or \\"—\\" if unknown",
   "comments": "number of comments as text, or \\"—\\" if unknown",
@@ -25,8 +27,12 @@ const FIELDS = `Reply with ONLY a JSON array: no intro, no explanation, no markd
   "checklist": ["3-5 short action items for me, including how to verify the claims"]
 }
 
+Language:
+- Write title, summary, category, deadline, action, steps, why, signals and checklist in the SAME language as the post itself (Arabic post → Arabic, French post → French, Tunisian/Egyptian dialect → the same dialect, English post → English).
+- Keep the JSON field names, dates and these fixed values exactly in English: platform, type, urgency, trust.
+
 How to choose urgency:
-- HIGH: has a deadline, expiry, limited spots or budget, or is worth doing this week
+- HIGH: has a deadline or expiry within the next 7 days, limited spots or budget, or is worth doing this week
 - MEDIUM: useful and actionable, but no time pressure
 - LOW: learning for later, inspiration, news or entertainment
 
@@ -38,6 +44,7 @@ How to choose trust:
 
 Rules:
 - Only include posts that are really in my saved items, with their real links. Never invent posts, links or numbers.
+- Always fill deadline_date when the post mentions any end date, expiry or time-limited offer — I use it to get reminded before it's too late.
 - If you can't see a detail, use "" (or "—" for likes/comments, [] for lists) instead of guessing.
 - If you can't access my saved posts at all, reply exactly: NO ACCESS`;
 
@@ -56,11 +63,33 @@ export function normalizeUrl(u: unknown): string | null {
     return x.origin + (x.pathname.replace(/\/+$/, "") || "/") + x.search;
   } catch { return null; }
 }
+// Local calendar date, not UTC, so "today" matches the user's clock.
+export function localDay(offsetDays = 0) {
+  const d = new Date(); d.setDate(d.getDate() + offsetDays);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+export function daysUntil(day: string) {
+  return Math.round((new Date(day + "T12:00:00").getTime() - new Date(localDay() + "T12:00:00").getTime()) / 86400000);
+}
+// Remind the day before the deadline, or today when the deadline is today/tomorrow.
+export function autoReminderDay(deadline: string) {
+  const d = new Date(deadline + "T12:00:00"); d.setDate(d.getDate() - 1);
+  const before = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return before < localDay() ? localDay() : before;
+}
 export function safeLink(u: string) { return /^https?:\/\//i.test(u) ? u : undefined; }
 
 const str = (v: unknown, n: number, fallback = "") => (v == null || v === "" ? fallback : String(v).slice(0, n));
 const list = (v: unknown, n = 12): string[] =>
   (Array.isArray(v) ? v : typeof v === "string" && v ? [v] : []).map(x => String(x).slice(0, 300)).filter(Boolean).slice(0, n);
+function dateOf(v: unknown) {
+  const d = String(v || "").trim().slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(d) && !isNaN(new Date(d + "T12:00:00").getTime()) ? d : "";
+}
+function timeOf(v: unknown) {
+  const m = String(v || "").trim().match(/^(\d{1,2}):(\d{2})/);
+  return m && +m[1] < 24 && +m[2] < 60 ? `${m[1].padStart(2, "0")}:${m[2]}` : "";
+}
 function platformOf(v: unknown, url: string): Platform {
   const p = String(v || "").toLowerCase();
   if (p.startsWith("insta") || /instagram\.com/.test(url)) return "Instagram";
@@ -94,6 +123,7 @@ export function fromRow(r: Row): Item {
     trust: trustOf(r.trust), deadline: str(r.deadline, 80), action: str(r.action, 300, "Open original + review"),
     likes: str(r.likes, 20, "—"), comments: str(r.comments, 20, "—"), status: statusOf(r.status),
     steps: list(r.steps), why: str(r.why, 600), signals: list(r.signals), links: list(r.links), checklist: list(r.checklist),
+    deadlineDate: dateOf(r.deadline_date), deadlineTime: timeOf(r.deadline_time),
   };
 }
 // A row ready to insert. The id is generated here so inserts also work on older tables without an id default.
@@ -106,10 +136,12 @@ export function toRow(r: Row, url: string, userId: string) {
     trust: trustOf(r.trust), deadline: str(r.deadline, 80), action: str(r.action, 300, "Open original + review"),
     likes: str(r.likes, 20, "—"), comments: str(r.comments, 20, "—"), status: "To Do",
     steps: list(r.steps), why: str(r.why, 600), signals: list(r.signals), links: list(r.links), checklist: list(r.checklist),
+    deadline_date: dateOf(r.deadline_date) || null, deadline_time: timeOf(r.deadline_time),
   };
 }
 export function reminderFromRow(r: Row): Reminder {
-  return { id: String(r.id), itemTitle: String(r.item_title || ""), itemLink: String(r.item_link || ""), date: String(r.date || ""), createdAt: String(r.created_at || "") };
+  return { id: String(r.id), itemId: String(r.item_id || ""), itemTitle: String(r.item_title || ""), itemLink: String(r.item_link || ""), date: String(r.date || ""),
+    createdAt: String(r.created_at || ""), kind: r.kind === "auto" ? "auto" : "manual", deadline: dateOf(r.deadline), deadlineTime: timeOf(r.deadline_time) };
 }
 
 // Accepts Meta AI's reply: a JSON array (even wrapped in text or ``` fences), or failing that, any links in the text.

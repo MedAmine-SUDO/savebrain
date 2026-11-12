@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
-import { Search, RefreshCw, Download, Plus, Calendar, Clock, AlertTriangle, ShieldCheck, ShieldAlert, CheckCircle2, Bookmark, Instagram, Facebook, X, ExternalLink, Bell, AlarmClock, Trash2, Play, Eye, FileSpreadsheet, Database, Zap, ListChecks, ArrowRight, Sparkles, CircleCheck, Loader2, Info, Home, Settings as SettingsIcon, Smartphone, ChevronRight, Check, Globe, Package, MonitorSmartphone, LogOut, Unplug, CalendarPlus } from "lucide-react";
+import { Search, RefreshCw, Download, Plus, Calendar, Clock, AlertTriangle, ShieldCheck, ShieldAlert, CheckCircle2, Bookmark, Instagram, Facebook, X, ExternalLink, Bell, AlarmClock, Trash2, Play, Eye, FileSpreadsheet, Database, Zap, ListChecks, ArrowRight, Sparkles, CircleCheck, Loader2, Info, Home, Settings as SettingsIcon, Smartphone, ChevronRight, Check, Globe, Package, MonitorSmartphone, LogOut, Unplug, CalendarPlus, Hourglass } from "lucide-react";
 import type { Item, Reminder, Status, Tab, Trust, Urgency } from "./lib/types";
 import { clearConfig, projectRef, type Config } from "./lib/config";
-import { fromRow, parseMetaReply, reminderFromRow, safeLink, toRow } from "./lib/items";
+import { autoReminderDay, daysUntil, fromRow, localDay, parseMetaReply, reminderFromRow, safeLink, toRow } from "./lib/items";
+import { downloadIcs } from "./lib/calendar";
 import { AppIcon } from "./components/AppIcon";
 import { AddSaveModal } from "./components/AddSaveModal";
 import { MetaPrompts } from "./components/MetaPrompts";
@@ -29,22 +30,16 @@ function fmt(d: string) {
   return isNaN(dt.getTime()) ? d : dt.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 function csvEscape(v: string) { return `"${String(v || "").replace(/"/g, '""')}"`; }
-const tomorrow = () => new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+const tomorrow = () => localDay(1);
+function endsLabel(day: string, time: string) {
+  const n = daysUntil(day);
+  const at = time ? ` at ${time}` : "";
+  return n < 0 ? `Ended ${fmt(day)}` : n === 0 ? `Ends today${at}` : n === 1 ? `Ends tomorrow${at}` : `Ends ${fmt(day)} · in ${n} days`;
+}
+const endsStyle = (day: string) => daysUntil(day) <= 2 ? "bg-[var(--danger-bg)] text-[var(--danger)]" : "bg-[var(--blue-bg)] text-[var(--accent)]";
 function PlatformIcon({ p, size }: { p: Item["platform"]; size: number }) {
   return p === "Instagram" ? <Instagram size={size} /> : p === "Facebook" ? <Facebook size={size} /> : <Globe size={size} />;
 }
-// All-day calendar event, so reminders reach the phone's own calendar notifications.
-function downloadIcs(r: Reminder) {
-  const day = r.date.replace(/-/g, "");
-  const next = new Date(r.date + "T12:00:00Z"); next.setUTCDate(next.getUTCDate() + 1);
-  const esc = (s: string) => s.replace(/[\\;,]/g, m => "\\" + m).replace(/\n/g, "\\n");
-  const ics = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//SaveBrain//EN", "BEGIN:VEVENT", `UID:${r.id}@savebrain`, `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").slice(0, 15)}Z`,
-    `DTSTART;VALUE=DATE:${day}`, `DTEND;VALUE=DATE:${next.toISOString().slice(0, 10).replace(/-/g, "")}`, `SUMMARY:${esc("SaveBrain: " + r.itemTitle)}`, `DESCRIPTION:${esc(r.itemLink)}`,
-    "BEGIN:VALARM", "ACTION:DISPLAY", "TRIGGER:PT9H", `DESCRIPTION:${esc(r.itemTitle)}`, "END:VALARM", "END:VEVENT", "END:VCALENDAR"].join("\r\n");
-  const url = URL.createObjectURL(new Blob([ics], { type: "text/calendar" }));
-  const a = document.createElement("a"); a.href = url; a.download = "savebrain-reminder.ics"; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-}
-
 export default function App({ sb, cfg, user }: { sb: SupabaseClient; cfg: Config; user: User }) {
   const [items, setItems] = useState<Item[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
@@ -76,14 +71,16 @@ export default function App({ sb, cfg, user }: { sb: SupabaseClient; cfg: Config
   const ref = projectRef(cfg);
 
   async function reloadRecords() {
-    const [it, rem] = await Promise.all([
+    const [it, rem, itProbe, remProbe] = await Promise.all([
       sb.from("savebrain_items").select("*").order("created_at", { ascending: false }),
       sb.from("savebrain_reminders").select("*").order("date"),
+      // Databases set up by an older SaveBrain lack the newest columns/tables: these fail there.
+      sb.from("savebrain_items").select("id,steps,deadline_date").limit(1),
+      sb.from("savebrain_reminders").select("id,kind,deadline").limit(1),
     ]);
     if (it.error) throw it.error;
     const rows = (it.data || []) as Record<string, unknown>[];
-    // Databases set up by an older SaveBrain lack the reminders table and the analysis columns.
-    setNeedsDbUpdate(!!rem.error || (rows.length > 0 && !("steps" in rows[0])));
+    setNeedsDbUpdate(!!(itProbe.error || remProbe.error));
     setItems(rows.map(fromRow));
     setReminders(rem.error ? [] : (rem.data || []).map(reminderFromRow));
     return rows.length;
@@ -108,19 +105,26 @@ export default function App({ sb, cfg, user }: { sb: SupabaseClient; cfg: Config
     setSyncing(false);
   }
 
+  // Inserts new saves (links already saved are skipped) and creates a reminder for every upcoming deadline.
   async function fileRows(rows: ReturnType<typeof toRow>[]) {
-    const { data, error } = await sb.from("savebrain_items").upsert(rows, { onConflict: "user_id,url", ignoreDuplicates: true }).select("id");
+    const { data, error } = await sb.from("savebrain_items").upsert(rows, { onConflict: "user_id,url", ignoreDuplicates: true }).select("id,url,title,deadline_date,deadline_time");
     if (error) throw new Error(/column|schema cache/i.test(error.message) ? "Your database needs the one-time update shown at the top of the page." : error.message);
+    const auto = (data || []).filter(r => r.deadline_date && r.deadline_date >= localDay()).map(r => ({
+      user_id: user.id, item_id: String(r.id), item_title: r.title, item_link: r.url, kind: "auto",
+      date: autoReminderDay(r.deadline_date), deadline: r.deadline_date, deadline_time: r.deadline_time || "",
+    }));
+    let reminded = 0;
+    if (auto.length) { const res = await sb.from("savebrain_reminders").insert(auto); if (!res.error) reminded = auto.length; }
     await reloadRecords();
-    return data?.length || 0;
+    return { added: data?.length || 0, reminded };
   }
   async function importReply(text: string) {
     const { rows } = parseMetaReply(text);
-    const added = await fileRows(rows.map(r => toRow(r.row, r.url, user.id)));
-    showToast(`Imported ${added} new saves${rows.length > added ? ` · ${rows.length - added} already in SaveBrain` : ""}.`);
+    const { added, reminded } = await fileRows(rows.map(r => toRow(r.row, r.url, user.id)));
+    showToast(`Imported ${added} new saves${rows.length > added ? ` · ${rows.length - added} already in SaveBrain` : ""}${reminded ? ` · ⏰ ${reminded} deadline reminders created` : ""}.`);
   }
   async function addLink(url: string) {
-    const added = await fileRows([toRow({ trust: "Check Claims", summary: "Added by link — import a Meta AI analysis for the full breakdown." }, url, user.id)]);
+    const { added } = await fileRows([toRow({ trust: "Check Claims", summary: "Added by link — import a Meta AI analysis for the full breakdown." }, url, user.id)]);
     showToast(added ? "Filed — it's in your To Do list." : "Already in SaveBrain.");
   }
 
@@ -148,7 +152,12 @@ export default function App({ sb, cfg, user }: { sb: SupabaseClient; cfg: Config
     done: items.filter(i => i.status === "Done").length,
   }), [items]);
 
-  const queue = useMemo(() => items.filter(i => i.urgency === "HIGH" || i.deadline).filter(i => i.status !== "Done").slice(0, 6), [items]);
+  // Soonest deadlines first, then the rest of HIGH urgency.
+  const queue = useMemo(() => items.filter(i => i.urgency === "HIGH" || i.deadline).filter(i => i.status !== "Done")
+    .sort((a, b) => (a.deadlineDate || "9999").localeCompare(b.deadlineDate || "9999")).slice(0, 6), [items]);
+  const upcomingDeadlines = useMemo(() => reminders.filter(r => r.kind === "auto" && r.deadline && daysUntil(r.deadline) >= 0)
+    .sort((a, b) => a.deadline.localeCompare(b.deadline)), [reminders]);
+  const upcomingReminders = useMemo(() => reminders.filter(r => daysUntil(r.kind === "auto" && r.deadline ? r.deadline : r.date) >= 0), [reminders]);
   const reviewItems = useMemo(() => items.filter(i => i.urgency === "HIGH" && i.status !== "Done").sort((a, b) => b.date.localeCompare(a.date)), [items]);
   const todayLabel = useMemo(() => new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" }), []);
   const greeting = useMemo(() => { const h = new Date().getHours(); return h < 12 ? "Good morning." : h < 18 ? "Good afternoon." : "Good evening."; }, []);
@@ -157,6 +166,7 @@ export default function App({ sb, cfg, user }: { sb: SupabaseClient; cfg: Config
     const prev = items; setItems(items.map(i => i.id === item.id ? { ...i, status: next } : i));
     const { error } = await sb.from("savebrain_items").update({ status: next }).eq("id", item.id);
     if (error) { setItems(prev); showToast("Could not save that status change — try again."); return; }
+    if (next === "Done") { await sb.from("savebrain_reminders").delete().eq("item_id", item.id).eq("kind", "auto"); setReminders(rs => rs.filter(r => !(r.itemId === item.id && r.kind === "auto"))); }
     showToast(next === "Done" ? `Marked done: ${item.title}` : next === "Snoozed" ? `Snoozed: ${item.title}` : `Back to To Do: ${item.title}`);
   }
   async function unsave(item: Item) {
@@ -164,12 +174,13 @@ export default function App({ sb, cfg, user }: { sb: SupabaseClient; cfg: Config
     const prev = items; setItems(items.filter(i => i.id !== item.id));
     const { error } = await sb.from("savebrain_items").delete().eq("id", item.id);
     if (error) { setItems(prev); showToast("Could not unsave — try again."); return; }
+    await sb.from("savebrain_reminders").delete().eq("item_id", item.id); setReminders(rs => rs.filter(r => r.itemId !== item.id));
     if (selected?.id === item.id) setSelected(null);
     showToast(`Unsaved: ${item.title}`);
   }
   async function createReminder(item: Item, date: string) {
     if (!date) { showToast("Pick a reminder date first."); return; }
-    const { error } = await sb.from("savebrain_reminders").insert({ user_id: user.id, item_title: item.title, item_link: item.link, date });
+    const { error } = await sb.from("savebrain_reminders").insert({ user_id: user.id, item_id: item.id, item_title: item.title, item_link: item.link, date, kind: "manual" });
     if (error) { showToast(needsDbUpdate ? "Reminders need the one-time database update shown at the top." : "Could not save the reminder — try again."); return; }
     await reloadRecords(); showToast(`Reminder set for ${fmt(date)} — ${item.title}`);
   }
@@ -229,17 +240,18 @@ export default function App({ sb, cfg, user }: { sb: SupabaseClient; cfg: Config
         <span className="text-xs text-[var(--muted)] ml-auto">{fmt(item.date)}</span>
       </div>
       <div className="mt-3">
-        <button onClick={() => { setSelected(item); setCheckState({}); }} className="text-left font-extrabold text-[17px] sm:text-lg leading-snug hover:underline min-h-[44px]">{item.title}</button>
+        <button dir="auto" onClick={() => { setSelected(item); setCheckState({}); }} className="text-start font-extrabold text-[17px] sm:text-lg leading-snug hover:underline min-h-[44px]">{item.title}</button>
         <div className="text-sm text-[var(--muted)] mt-0.5">{item.author} · {item.likes !== "—" ? `${item.likes} likes · ${item.comments} comments` : "Saved post"}</div>
-        <p className="text-sm leading-relaxed mt-2 text-[var(--ink)]/90 break-words">{item.summary}</p>
+        <p dir="auto" className="text-sm leading-relaxed mt-2 text-[var(--ink)]/90 break-words">{item.summary}</p>
         <div className="flex flex-wrap gap-1.5 mt-3">
           <span className="text-[11px] font-bold px-2 py-1 rounded-full bg-[var(--surface)] border border-[var(--line)]">{item.category}</span>
           <span className={`text-[11px] font-bold px-2 py-1 rounded-full border ${urgencyStyle(item.urgency)}`}>{item.urgency} urgency</span>
           <span className={`text-[11px] font-bold px-2 py-1 rounded-full ${trustStyle(item.trust)}`}>{item.trust === "Verified" ? <span className="inline-flex items-center gap-1"><ShieldCheck size={11} /> Verified</span> : item.trust === "High Fake Risk" ? <span className="inline-flex items-center gap-1"><ShieldAlert size={11} /> High Fake Risk</span> : item.trust}</span>
-          {item.deadline && <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-[var(--blue-bg)] text-[var(--accent)]"><Calendar size={11} /> {item.deadline}</span>}
+          {item.deadlineDate ? <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full ${endsStyle(item.deadlineDate)}`}><Hourglass size={11} /> {endsLabel(item.deadlineDate, item.deadlineTime)}</span>
+            : item.deadline && <span dir="auto" className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-[var(--blue-bg)] text-[var(--accent)]"><Calendar size={11} /> {item.deadline}</span>}
           <span className={`text-[11px] font-bold px-2 py-1 rounded-full ${item.status === "Done" ? "bg-[var(--green-bg)] text-[var(--green)]" : item.status === "Snoozed" ? "bg-[var(--amber-bg)] text-[var(--amber)]" : "bg-[var(--surface)]"}`}>{item.status}</span>
         </div>
-        <div className="mt-3 text-sm bg-[var(--surface)] border border-[var(--line)] rounded-xl px-3 py-2.5"><span className="font-bold">Next action:</span> {item.action}</div>
+        <div className="mt-3 text-sm bg-[var(--surface)] border border-[var(--line)] rounded-xl px-3 py-2.5"><span className="font-bold">Next action:</span> <span dir="auto">{item.action}</span></div>
       </div>
       <div className="flex flex-wrap gap-2 mt-4">
         <a href={safeLink(item.link)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center gap-1.5 bg-[var(--ink)] text-[var(--surface)] text-sm font-bold px-4 min-h-[44px] rounded-full">Open Original <ExternalLink size={13} /></a>
@@ -278,9 +290,9 @@ export default function App({ sb, cfg, user }: { sb: SupabaseClient; cfg: Config
       <li key={r.id} className={compact ? "flex gap-2 items-start text-sm border border-[var(--line)] rounded-lg px-2.5 py-2" : "flex gap-3 items-start bg-[var(--card)] border border-[var(--line)] rounded-2xl px-4 py-3"}>
         <Calendar size={compact ? 14 : 18} className="mt-0.5 shrink-0 text-[var(--accent)]" />
         <div className="min-w-0 flex-1">
-          <div className={compact ? "font-bold text-xs leading-snug" : "font-bold text-sm leading-snug"}>{r.itemTitle}</div>
-          <div className={compact ? "text-[11px] text-[var(--muted)]" : "text-xs text-[var(--muted)] mt-0.5"}>{fmt(r.date)}</div>
-          {!compact && <div className="flex flex-wrap gap-3"><a href={safeLink(r.itemLink)} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-[var(--accent)] inline-flex items-center gap-1 mt-1 min-h-[36px]">Open original <ExternalLink size={12} /></a><button onClick={() => downloadIcs(r)} className="text-xs font-bold text-[var(--accent)] inline-flex items-center gap-1 mt-1 min-h-[36px]"><CalendarPlus size={12} /> Add to calendar</button></div>}
+          <div dir="auto" className={compact ? "font-bold text-xs leading-snug" : "font-bold text-sm leading-snug"}>{r.itemTitle}</div>
+          <div className={compact ? "text-[11px] text-[var(--muted)]" : "text-xs text-[var(--muted)] mt-0.5"}>{r.kind === "auto" && r.deadline ? <><b className="text-[var(--danger)]">⏰ Auto</b> · {endsLabel(r.deadline, r.deadlineTime)} · remind {fmt(r.date)}</> : fmt(r.date)}</div>
+          {!compact && <div className="flex flex-wrap gap-3"><a href={safeLink(r.itemLink)} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-[var(--accent)] inline-flex items-center gap-1 mt-1 min-h-[36px]">Open original <ExternalLink size={12} /></a><button onClick={() => downloadIcs([r], "savebrain-reminder.ics")} className="text-xs font-bold text-[var(--accent)] inline-flex items-center gap-1 mt-1 min-h-[36px]"><CalendarPlus size={12} /> Add to calendar</button></div>}
         </div>
         <button onClick={() => deleteReminder(r)} aria-label="Delete reminder" className={compact ? "text-[var(--danger)] shrink-0 p-1 min-h-[36px] min-w-[36px]" : "text-[var(--danger)] shrink-0 p-2 min-h-[40px] min-w-[40px]"}><X size={compact ? 15 : 16} /></button>
       </li>))}</ul>
@@ -290,8 +302,8 @@ export default function App({ sb, cfg, user }: { sb: SupabaseClient; cfg: Config
     <div className="space-y-3">
       {queue.length === 0 ? <p className="text-sm text-[var(--muted)]">Nothing urgent right now. Your queue is clear — enjoy the calm.</p> : queue.map(q => { const d = queueDates[q.id] || tomorrow(); return (
         <div key={q.id} className="border border-[var(--line)] rounded-xl p-3 bg-[var(--card)]">
-          <div className="flex gap-1.5 flex-wrap"><span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${urgencyStyle(q.urgency)}`}>{q.urgency}</span>{q.deadline && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-[var(--blue-bg)] text-[var(--accent)]">{q.deadline}</span>}</div>
-          <button onClick={() => { setSelected(q); setCheckState({}); }} className="font-bold text-sm leading-snug mt-1.5 text-left hover:underline">{q.title}</button><div className="text-xs text-[var(--muted)]">{q.author} · {q.category}</div>
+          <div className="flex gap-1.5 flex-wrap"><span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${urgencyStyle(q.urgency)}`}>{q.urgency}</span>{q.deadlineDate ? <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${endsStyle(q.deadlineDate)}`}>{endsLabel(q.deadlineDate, q.deadlineTime)}</span> : q.deadline && <span dir="auto" className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-[var(--blue-bg)] text-[var(--accent)]">{q.deadline}</span>}</div>
+          <button onClick={() => { setSelected(q); setCheckState({}); }} dir="auto" className="font-bold text-sm leading-snug mt-1.5 text-start hover:underline">{q.title}</button><div className="text-xs text-[var(--muted)]">{q.author} · {q.category}</div>
           <label className="block text-[11px] font-bold text-[var(--muted)] mt-2">Reminder date</label>
           <input type="date" value={d} onChange={e => setQueueDates({ ...queueDates, [q.id]: e.target.value })} className="mt-1 w-full border border-[var(--line)] rounded-lg px-2 py-2 text-sm bg-[var(--surface)] min-h-[44px]" />
           <button onClick={() => createReminder(q, d)} className="mt-2 w-full inline-flex justify-center items-center gap-1.5 bg-[var(--ink)] text-[var(--surface)] text-sm font-bold px-3 min-h-[44px] rounded-full"><Bell size={13} /> Create reminder</button>
@@ -431,7 +443,8 @@ export default function App({ sb, cfg, user }: { sb: SupabaseClient; cfg: Config
           </section>
         ) : tab === "reminders" ? (
           <section className="max-w-[820px] mx-auto">
-            <h1 className="text-[clamp(1.5rem,3vw,2rem)] font-extrabold leading-tight">Reminders</h1><p className="text-sm text-[var(--muted)] mt-1">Everything you asked to be reminded about — in one place. Use “Add to calendar” to get a notification on the day.</p>
+            <h1 className="text-[clamp(1.5rem,3vw,2rem)] font-extrabold leading-tight">Reminders</h1><p className="text-sm text-[var(--muted)] mt-1">Everything you asked to be reminded about — in one place. Posts with an end date get a reminder automatically. Add them to your phone's calendar to be notified even when SaveBrain is closed.</p>
+            {upcomingReminders.length > 0 && <button onClick={() => { downloadIcs(upcomingReminders); showToast("Open the downloaded file to add the reminders to your calendar."); }} className="mt-3 inline-flex items-center gap-2 bg-[var(--ink)] text-[var(--surface)] text-sm font-bold px-4 min-h-[44px] rounded-full"><CalendarPlus size={15} /> Get notified — add {upcomingReminders.length} to calendar</button>}
             {reminders.length === 0 ? <div className="mt-4 bg-[var(--card)] border border-[var(--line)] rounded-2xl p-8 text-center"><Bell className="mx-auto text-[var(--muted)]" /><h3 className="font-bold mt-2">No reminders yet</h3><p className="text-sm text-[var(--muted)] mt-1">Create one from any card, or from the Queue.</p><button onClick={() => goTab("queue")} className="mt-3 bg-[var(--ink)] text-[var(--surface)] text-sm font-bold px-5 min-h-[44px] rounded-full">Go to Queue</button></div> : reminderList(false)}
             <h2 className="font-extrabold mt-6 mb-3">Add from Queue</h2>{queuePanel(true)}
           </section>
@@ -451,6 +464,18 @@ export default function App({ sb, cfg, user }: { sb: SupabaseClient; cfg: Config
               <div className="grid grid-cols-3 gap-2 mt-4 text-center">{[{ l: "Need action", v: stats.needs }, { l: "Deadlines", v: stats.deadlines }, { l: "Fake-risk", v: stats.fake }].map(s => (<div key={s.l} className="bg-[var(--surface)] border border-[var(--line)] rounded-2xl p-3"><div className="text-[clamp(1.4rem,4vw,1.8rem)] font-extrabold leading-none">{s.v}</div><div className="text-[11px] font-bold text-[var(--muted)] mt-1">{s.l}</div></div>))}</div>
               {reviewItems.length > 0 && <button onClick={() => { setSelected(reviewItems[0]); setCheckState({}); }} className="mt-3 w-full flex items-center justify-between gap-2 text-left bg-[var(--surface)] border border-[var(--line)] rounded-2xl px-4 py-3 min-h-[56px]"><span className="min-w-0"><span className="block text-[11px] font-bold text-[var(--danger)]">FIRST UP · HIGH</span><span className="block font-bold text-sm truncate">{reviewItems[0].title}</span></span><ChevronRight size={18} className="shrink-0" /></button>}
             </div>
+
+            {upcomingDeadlines.length > 0 && (
+              <div className="bg-[var(--card)] border-2 border-red-200 rounded-3xl p-4 sm:p-5 mb-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div><div className="text-xs font-bold tracking-widest text-[var(--danger)] uppercase flex items-center gap-1.5"><Hourglass size={13} /> Deadlines coming up</div><p className="text-sm text-[var(--muted)] mt-1">SaveBrain created these reminders from the posts' end dates.</p></div>
+                  <button onClick={() => { downloadIcs(upcomingReminders); showToast("Open the downloaded file to add the reminders to your calendar."); }} className="inline-flex items-center justify-center gap-2 bg-[var(--ink)] text-[var(--surface)] text-sm font-bold px-5 min-h-[48px] rounded-full w-full sm:w-auto"><CalendarPlus size={16} /> Get notified — add to calendar</button>
+                </div>
+                <ul className="mt-3 space-y-2">{upcomingDeadlines.slice(0, 3).map(r => { const it = items.find(i => i.id === r.itemId); return (
+                  <li key={r.id}><button onClick={() => { if (it) { setSelected(it); setCheckState({}); } }} className="w-full flex items-center justify-between gap-2 text-start bg-[var(--surface)] border border-[var(--line)] rounded-2xl px-4 py-3 min-h-[56px]"><span className="min-w-0"><span className={`inline-block text-[11px] font-bold px-2 py-0.5 rounded-full ${endsStyle(r.deadline)}`}>{endsLabel(r.deadline, r.deadlineTime)}</span><span dir="auto" className="block font-bold text-sm truncate mt-1">{r.itemTitle}</span></span><ChevronRight size={18} className="shrink-0" /></button></li>); })}</ul>
+                {upcomingDeadlines.length > 3 && <button onClick={() => goTab("reminders")} className="mt-2 text-sm font-bold text-[var(--accent)] min-h-[40px]">See all {upcomingDeadlines.length} deadlines →</button>}
+              </div>
+            )}
 
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
               {[{ l: "Total Analyzed", v: stats.total, s: "Across Instagram + Facebook", icon: <Database size={16} /> }, { l: "Needs Action", v: stats.needs, s: "Status: To Do", icon: <ListChecks size={16} /> }, { l: "Deadlines", v: stats.deadlines, s: "Items with a deadline", icon: <Calendar size={16} /> }, { l: "Fake-Risk Flagged", v: stats.fake, s: "High Fake Risk", icon: <AlertTriangle size={16} /> }, { l: "Done", v: stats.done, s: "Completed actions", icon: <CheckCircle2 size={16} /> }].map(s => (
@@ -504,9 +529,9 @@ export default function App({ sb, cfg, user }: { sb: SupabaseClient; cfg: Config
           <div className="bg-[var(--card)] w-full max-w-[640px] max-h-[92vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 slide-up" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between"><span className="text-xs font-bold tracking-widest text-[var(--muted)] uppercase">Daily Review · {reviewIndex + 1} of {reviewItems.length}</span><button onClick={() => setReviewActive(false)} aria-label="Close review" className="p-2 rounded-full border border-[var(--line)] min-h-[40px] min-w-[40px]"><X size={16} /></button></div>
             <div className="mt-3 h-2 bg-[var(--surface)] rounded-full overflow-hidden"><div className="h-full bg-emerald-500 transition-all" style={{ width: `${(reviewIndex / reviewItems.length) * 100}%` }} /></div>
-            <div className="flex flex-wrap gap-1.5 mt-4"><span className={`text-xs font-bold px-2 py-1 rounded-full border ${urgencyStyle(reviewCurrent.urgency)}`}>{reviewCurrent.urgency}</span><span className={`text-xs font-bold px-2 py-1 rounded-full ${trustStyle(reviewCurrent.trust)}`}>{reviewCurrent.trust}</span>{reviewCurrent.deadline && <span className="text-xs font-bold px-2 py-1 rounded-full bg-[var(--blue-bg)] text-[var(--accent)]">{reviewCurrent.deadline}</span>}</div>
-            <h2 className="text-xl sm:text-2xl font-extrabold leading-tight mt-3">{reviewCurrent.title}</h2><div className="text-sm text-[var(--muted)] mt-1">{reviewCurrent.author} · {reviewCurrent.category}</div>
-            <p className="text-sm leading-relaxed mt-3">{reviewCurrent.summary}</p>
+            <div className="flex flex-wrap gap-1.5 mt-4"><span className={`text-xs font-bold px-2 py-1 rounded-full border ${urgencyStyle(reviewCurrent.urgency)}`}>{reviewCurrent.urgency}</span><span className={`text-xs font-bold px-2 py-1 rounded-full ${trustStyle(reviewCurrent.trust)}`}>{reviewCurrent.trust}</span>{reviewCurrent.deadlineDate ? <span className={`text-xs font-bold px-2 py-1 rounded-full ${endsStyle(reviewCurrent.deadlineDate)}`}>{endsLabel(reviewCurrent.deadlineDate, reviewCurrent.deadlineTime)}</span> : reviewCurrent.deadline && <span dir="auto" className="text-xs font-bold px-2 py-1 rounded-full bg-[var(--blue-bg)] text-[var(--accent)]">{reviewCurrent.deadline}</span>}</div>
+            <h2 dir="auto" className="text-xl sm:text-2xl font-extrabold leading-tight mt-3">{reviewCurrent.title}</h2><div className="text-sm text-[var(--muted)] mt-1">{reviewCurrent.author} · {reviewCurrent.category}</div>
+            <p dir="auto" className="text-sm leading-relaxed mt-3">{reviewCurrent.summary}</p>
             <div className="mt-3 text-sm bg-[var(--surface)] border border-[var(--line)] rounded-xl px-3 py-2.5"><span className="font-bold">Next action:</span> {reviewCurrent.action}</div>
             <div className="grid grid-cols-3 gap-2 mt-5">
               <button onClick={() => reviewAdvance("done")} className="inline-flex justify-center items-center gap-1.5 bg-emerald-600 text-white text-sm font-bold px-3 min-h-[52px] rounded-full"><Check size={16} /> Done</button>
@@ -523,14 +548,14 @@ export default function App({ sb, cfg, user }: { sb: SupabaseClient; cfg: Config
       {selected && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => setSelected(null)}>
           <div className="bg-[var(--card)] w-full max-w-[720px] max-h-[92vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 slide-up" onClick={e => e.stopPropagation()}>
-            <div className="flex items-start gap-3"><div className="min-w-0 flex-1"><div className="flex flex-wrap gap-1.5 items-center"><PlatformIcon p={selected.platform} size={14} /><span className="text-xs font-bold">{selected.platform} · {selected.type} · {fmt(selected.date)}</span></div><h2 className="text-xl sm:text-2xl font-extrabold leading-tight mt-1">{selected.title}</h2><div className="text-sm text-[var(--muted)] mt-1">{selected.author} · {selected.category}</div></div><button onClick={() => setSelected(null)} aria-label="Close detail" className="p-2 rounded-full border border-[var(--line)] min-h-[40px] min-w-[40px]"><X size={18} /></button></div>
-            <div className="flex flex-wrap gap-1.5 mt-3"><span className={`text-xs font-bold px-2 py-1 rounded-full border ${urgencyStyle(selected.urgency)}`}>{selected.urgency} urgency</span><span className={`text-xs font-bold px-2 py-1 rounded-full ${trustStyle(selected.trust)}`}>{selected.trust}</span>{selected.deadline && <span className="text-xs font-bold px-2 py-1 rounded-full bg-[var(--blue-bg)] text-[var(--accent)]">Deadline: {selected.deadline}</span>}<span className="text-xs font-bold px-2 py-1 rounded-full bg-[var(--surface)] border border-[var(--line)]">Status: {selected.status}</span></div>
-            <h3 className="font-extrabold mt-5">What it is</h3><p className="text-sm leading-relaxed mt-1">{selected.summary || "No summary yet — import a Meta AI analysis for this link."}</p>
-            {selected.steps.length > 0 && <><h3 className="font-extrabold mt-4">Step-by-step extracted</h3><ol className="mt-2 space-y-1.5">{selected.steps.map((s, i) => (<li key={i} className="flex gap-2 text-sm"><span className="w-5 h-5 shrink-0 rounded-full bg-[var(--ink)] text-[var(--surface)] text-[11px] font-bold flex items-center justify-center">{i + 1}</span><span>{s}</span></li>))}</ol></>}
-            {selected.why && <><h3 className="font-extrabold mt-4">Why this urgency</h3><p className="text-sm leading-relaxed mt-1">{selected.why}</p></>}
-            {selected.signals.length > 0 && <><h3 className="font-extrabold mt-4">Trust breakdown — fake signals checklist</h3><ul className="mt-2 space-y-1.5">{selected.signals.map((s, i) => (<li key={i} className="flex gap-2 text-sm"><AlertTriangle size={15} className="text-[var(--amber)] shrink-0 mt-0.5" /><span>{s}</span></li>))}</ul></>}
+            <div className="flex items-start gap-3"><div className="min-w-0 flex-1"><div className="flex flex-wrap gap-1.5 items-center"><PlatformIcon p={selected.platform} size={14} /><span className="text-xs font-bold">{selected.platform} · {selected.type} · {fmt(selected.date)}</span></div><h2 dir="auto" className="text-xl sm:text-2xl font-extrabold leading-tight mt-1">{selected.title}</h2><div className="text-sm text-[var(--muted)] mt-1">{selected.author} · {selected.category}</div></div><button onClick={() => setSelected(null)} aria-label="Close detail" className="p-2 rounded-full border border-[var(--line)] min-h-[40px] min-w-[40px]"><X size={18} /></button></div>
+            <div className="flex flex-wrap gap-1.5 mt-3"><span className={`text-xs font-bold px-2 py-1 rounded-full border ${urgencyStyle(selected.urgency)}`}>{selected.urgency} urgency</span><span className={`text-xs font-bold px-2 py-1 rounded-full ${trustStyle(selected.trust)}`}>{selected.trust}</span>{selected.deadlineDate && <span className={`text-xs font-bold px-2 py-1 rounded-full ${endsStyle(selected.deadlineDate)}`}>{endsLabel(selected.deadlineDate, selected.deadlineTime)}</span>}{selected.deadline && <span dir="auto" className="text-xs font-bold px-2 py-1 rounded-full bg-[var(--blue-bg)] text-[var(--accent)]">Deadline: {selected.deadline}</span>}<span className="text-xs font-bold px-2 py-1 rounded-full bg-[var(--surface)] border border-[var(--line)]">Status: {selected.status}</span></div>
+            <h3 className="font-extrabold mt-5">What it is</h3><p dir="auto" className="text-sm leading-relaxed mt-1">{selected.summary || "No summary yet — import a Meta AI analysis for this link."}</p>
+            {selected.steps.length > 0 && <><h3 className="font-extrabold mt-4">Step-by-step extracted</h3><ol className="mt-2 space-y-1.5">{selected.steps.map((s, i) => (<li key={i} dir="auto" className="flex gap-2 text-sm"><span className="w-5 h-5 shrink-0 rounded-full bg-[var(--ink)] text-[var(--surface)] text-[11px] font-bold flex items-center justify-center">{i + 1}</span><span>{s}</span></li>))}</ol></>}
+            {selected.why && <><h3 className="font-extrabold mt-4">Why this urgency</h3><p dir="auto" className="text-sm leading-relaxed mt-1">{selected.why}</p></>}
+            {selected.signals.length > 0 && <><h3 className="font-extrabold mt-4">Trust breakdown — fake signals checklist</h3><ul className="mt-2 space-y-1.5">{selected.signals.map((s, i) => (<li key={i} dir="auto" className="flex gap-2 text-sm"><AlertTriangle size={15} className="text-[var(--amber)] shrink-0 mt-0.5" /><span>{s}</span></li>))}</ul></>}
             {selected.links.length > 0 && <><h3 className="font-extrabold mt-4">Links extracted</h3><ul className="mt-2 space-y-1">{selected.links.map((l, i) => (<li key={i} className="text-sm font-mono break-all">{l}</li>))}</ul></>}
-            {selected.checklist.length > 0 && <><h3 className="font-extrabold mt-4">Checklist of actions</h3><div className="mt-2 space-y-2">{selected.checklist.map((c, i) => { const k = `${selected.id}-${i}`; return (<label key={k} className="flex gap-2 items-start text-sm cursor-pointer bg-[var(--surface)] border border-[var(--line)] rounded-xl px-3 py-2.5"><input type="checkbox" checked={!!checkState[k]} onChange={e => setCheckState({ ...checkState, [k]: e.target.checked })} className="mt-0.5 w-4 h-4 accent-black" /><span className={checkState[k] ? "line-through text-[var(--muted)]" : ""}>{c}</span></label>); })}</div></>}
+            {selected.checklist.length > 0 && <><h3 className="font-extrabold mt-4">Checklist of actions</h3><div className="mt-2 space-y-2">{selected.checklist.map((c, i) => { const k = `${selected.id}-${i}`; return (<label key={k} dir="auto" className="flex gap-2 items-start text-sm cursor-pointer bg-[var(--surface)] border border-[var(--line)] rounded-xl px-3 py-2.5"><input type="checkbox" checked={!!checkState[k]} onChange={e => setCheckState({ ...checkState, [k]: e.target.checked })} className="mt-0.5 w-4 h-4 accent-black" /><span className={checkState[k] ? "line-through text-[var(--muted)]" : ""}>{c}</span></label>); })}</div></>}
             <div className="flex flex-wrap gap-2 mt-5"><a href={safeLink(selected.link)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 bg-[var(--ink)] text-[var(--surface)] text-sm font-bold px-4 min-h-[44px] rounded-full">Open Original <ExternalLink size={14} /></a><button onClick={() => { setSelected(null); createReminder(selected, tomorrow()); }} className="inline-flex items-center gap-1.5 border border-[var(--line)] text-sm font-bold px-4 min-h-[44px] rounded-full"><Bell size={14} /> Create Reminder</button><button onClick={() => { updateStatus(selected, selected.status === "Done" ? "To Do" : "Done"); setSelected(null); }} className="inline-flex items-center gap-1.5 border border-[var(--line)] text-sm font-bold px-4 min-h-[44px] rounded-full"><Play size={14} /> {selected.status === "Done" ? "Undo Done" : "Mark Done"}</button></div>
             <p className="text-xs text-[var(--muted)] mt-3">Checklist ticks in this detail view are for working through the steps; status and reminders above are saved.</p>
           </div>

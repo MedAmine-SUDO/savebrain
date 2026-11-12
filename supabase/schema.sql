@@ -31,7 +31,9 @@ alter table savebrain_items
   add column if not exists steps jsonb not null default '[]'::jsonb,
   add column if not exists signals jsonb not null default '[]'::jsonb,
   add column if not exists links jsonb not null default '[]'::jsonb,
-  add column if not exists checklist jsonb not null default '[]'::jsonb;
+  add column if not exists checklist jsonb not null default '[]'::jsonb,
+  add column if not exists deadline_date date,
+  add column if not exists deadline_time text;
 alter table savebrain_items alter column status set default 'To Do';
 
 -- Values written by earlier versions of SaveBrain
@@ -53,6 +55,12 @@ create table if not exists savebrain_reminders (
   date date not null,
   created_at timestamptz default now()
 );
+-- kind = 'auto' for reminders SaveBrain creates from a post's deadline, 'manual' for ones you add
+alter table savebrain_reminders
+  add column if not exists item_id text,
+  add column if not exists kind text not null default 'manual',
+  add column if not exists deadline date,
+  add column if not exists deadline_time text;
 create index if not exists savebrain_reminders_user_id_idx on savebrain_reminders(user_id);
 
 -- ---------- Access: signed-in users only, and only their own rows ----------
