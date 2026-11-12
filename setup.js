@@ -13,7 +13,7 @@ function clearConfig(){ try{ localStorage.removeItem(CONFIG_KEY); }catch(e){} }
 const sleep = ms => new Promise(r=>setTimeout(r, ms));
 async function retry(fn, tries, delay){
   let last;
-  for(let i=0;i<tries;i++){ try{ return await fn(); }catch(e){ last=e; await sleep(delay); } }
+  for(let i=0;i<tries;i++){ try{ return await fn(); }catch(e){ last=e; if(e.fatal) break; await sleep(delay); } }
   throw last;
 }
 let mgmtToken=null;
@@ -73,7 +73,6 @@ async function runSetup(){
     if(!allow.includes(appUrl)) allow.push(appUrl);
     const patch = { uri_allow_list: allow.join(',') };
     if(isNew || !auth.site_url || /localhost/.test(auth.site_url)) patch.site_url = appUrl;
-    if(isNew) Object.assign(patch, { mailer_autoconfirm: true, disable_signup: false });
     await retry(()=>mgmt(`/projects/${ref}/config/auth`, { method:'PATCH', body: JSON.stringify(patch) }), 6, 5000);
     log('Getting your project key…');
     const keys = await retry(()=>mgmt(`/projects/${ref}/api-keys`), 12, 5000);
@@ -81,22 +80,31 @@ async function runSetup(){
     if(!pub) pub = await mgmt(`/projects/${ref}/api-keys`, { method:'POST', body: JSON.stringify({ type:'publishable', name:'savebrain' }) });
     const cfg = { url: `https://${ref}.supabase.co`, key: pub.api_key };
     log('Creating your SaveBrain account…');
-    if(isNew) await sleep(8000); // let the auth settings above take effect
     const client = window.supabase.createClient(cfg.url, cfg.key);
-    const { data, error } = await retry(async()=>{
-      let res = await client.auth.signUp({ email, password, options: { emailRedirectTo: appUrl } });
-      if(res.error && /registered|exists/i.test(res.error.message)) res = await client.auth.signInWithPassword({ email, password });
-      if(res.error && (!res.error.status || res.error.status>=500)) throw res.error;
-      return res;
+    // "Already registered" / "Signups not allowed" just mean the account may exist already: fall through to sign-in.
+    await retry(async()=>{
+      const { error } = await client.auth.signUp({ email, password, options: { emailRedirectTo: appUrl } });
+      if(error && !/registered|exists|signups? (are )?not allowed|disabled/i.test(error.message)){
+        if(!error.status || error.status>=500) throw error; // auth service still starting: retry
+        throw Object.assign(error, { fatal: true });
+      }
     }, 6, 5000);
-    if(error) throw error;
+    // Confirm the account directly instead of relying on Supabase's confirmation email,
+    // which is slow, rate-limited, and only delivered to org members on the free plan.
+    await retry(()=>mgmt(`/projects/${ref}/database/query`, { method:'POST', body: JSON.stringify({
+      query: 'update auth.users set email_confirmed_at = now() where lower(email) = lower($1) and email_confirmed_at is null',
+      parameters: [email] }) }), 6, 5000);
+    const { error: signInError } = await client.auth.signInWithPassword({ email, password });
+    if(signInError) throw new Error(/invalid/i.test(signInError.message)
+      ? 'An account with this email already exists with a different password. Use that password, or reset it in Supabase → Authentication → Users.'
+      : signInError.message);
     if(isNew){
       log('Locking sign-ups so only you can use this project…');
-      await retry(()=>mgmt(`/projects/${ref}/config/auth`, { method:'PATCH', body: JSON.stringify({ disable_signup: true, mailer_autoconfirm: false }) }), 6, 5000);
+      await retry(()=>mgmt(`/projects/${ref}/config/auth`, { method:'PATCH', body: JSON.stringify({ disable_signup: true }) }), 6, 5000);
     }
     if(!saveConfig(cfg)) throw new Error('Could not save settings in this browser (private mode?).');
     mgmtToken=null; $('setupToken').value='';
-    log(data.session ? '✅ All done! Opening SaveBrain…' : '📧 All done! Confirm your email, then sign in.');
+    log('✅ All done! Opening SaveBrain…');
     setTimeout(()=>location.reload(), 2500);
   }catch(e){
     $('setupMsg').textContent='❌ '+e.message+' — click “Set up SaveBrain” again to continue where it stopped.';

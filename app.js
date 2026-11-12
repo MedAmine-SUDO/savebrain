@@ -93,7 +93,12 @@ async function auth(mode){
   const { data, error } = mode==='up'
     ? await sb.auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname } })
     : await sb.auth.signInWithPassword({ email, password });
-  if(error){ $('authMsg').textContent='❌ '+error.message; return; }
+  if(error){
+    $('authMsg').textContent = /not confirmed/i.test(error.message) ? '❌ Your email isn\'t confirmed yet. Click “Use a different Supabase project” below, run setup again with the same project and email, and it will confirm your account.'
+      : /signups? (are )?not allowed/i.test(error.message) ? '❌ This SaveBrain is locked to its owner. Sign in with the email and password you chose during setup.'
+      : '❌ '+error.message;
+    return;
+  }
   $('authMsg').textContent = mode==='up' && !data.session ? '📧 Check your email to confirm your account, then sign in.' : '';
 }
 async function copyPrompt(kind){
