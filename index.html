@@ -1,36 +1,69 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>SaveBrain — Saved Posts Intelligence</title>
-<link rel="stylesheet" href="style.css"><script src="config.js"></script>
+<link rel="stylesheet" href="style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.min.js"></script></head>
 <body>
-<header><div class="logo">🧠 SaveBrain</div><div id="backendStatus" class="status">Checking Supabase…</div><button id="signOutBtn" class="ghost" hidden>Sign out</button></header>
+<header><div class="logo">🧠 SaveBrain</div><div id="backendStatus" class="status">Loading…</div><button id="signOutBtn" class="ghost" hidden>Sign out</button></header>
 <main>
-<section id="setupView" class="card highlight" hidden><h2>Connect your Supabase project</h2>
-<p>SaveBrain runs on <b>your own</b> free Supabase project. Your URL and key are saved only in this browser. See <a href="https://github.com/MedAmine-SUDO/savebrain-frontend#use-it-with-your-own-supabase" target="_blank" rel="noopener noreferrer">setup steps</a>.</p>
+<section id="setupView" class="card highlight" hidden><h2>Set up SaveBrain (about 3 minutes)</h2>
+<p>SaveBrain keeps your saves in <b>your own</b> free Supabase database — nobody else, including the SaveBrain author, can see them.</p>
+<ol class="steps">
+<li><a href="https://supabase.com/dashboard/sign-up" target="_blank" rel="noopener noreferrer">Create a free Supabase account</a> (skip if you have one).</li>
+<li><a href="https://supabase.com/dashboard/account/tokens" target="_blank" rel="noopener noreferrer">Generate an access token</a> → name it “SaveBrain setup” → copy it and paste it here:
+<input id="setupToken" type="password" placeholder="sbp_..." autocomplete="off">
+<button id="setupLoadBtn">Continue →</button></li>
+</ol>
+<div id="setupStep2" hidden>
+<label>Project <select id="setupProject"></select></label>
+<label id="setupOrgLabel">Organization <select id="setupOrg"></select></label>
+<p>Choose the email and password you'll use to sign in to SaveBrain:</p>
+<input id="setupEmail" type="email" placeholder="Email" autocomplete="email">
+<input id="setupPassword" type="password" placeholder="Password (min 6 characters)" autocomplete="new-password" minlength="6">
+<button id="setupRunBtn">Set up SaveBrain →</button>
+</div>
+<ul id="setupLog" class="log"></ul>
+<div id="setupMsg"></div>
+<p class="muted">🔒 Your token is only sent to api.supabase.com, only kept in this tab, and never saved. When setup is done you can delete it on the tokens page.</p>
+<details><summary>Advanced: I already set up a project</summary>
+<p>Run <a href="supabase/schema.sql" target="_blank">supabase/schema.sql</a> in your project's SQL Editor, then paste its URL and publishable key.</p>
 <form id="setupForm"><input id="setupUrl" type="url" placeholder="https://your-project.supabase.co" required>
 <input id="setupKey" placeholder="sb_publishable_..." autocomplete="off" required>
 <button type="submit">Save & connect</button></form>
-<div id="setupMsg"></div>
+<div id="manualMsg"></div>
+</details>
 </section>
 <section id="authView" class="card highlight" hidden><h2>Sign in to SaveBrain</h2>
 <p>Your saves are private — only you can see them.</p>
 <form id="authForm"><input id="authEmail" type="email" placeholder="Email" autocomplete="email" required>
 <input id="authPassword" type="password" placeholder="Password (min 6 characters)" autocomplete="current-password" minlength="6" required>
-<div class="actions"><button type="submit" id="signInBtn">Sign in</button><button type="button" id="signUpBtn" class="ghost">Create account</button></div></form>
+<div class="actions"><button type="submit">Sign in</button><button type="button" id="signUpBtn" class="ghost">Create account</button></div></form>
 <div id="authMsg"></div>
-<p><button type="button" id="resetConfigBtn" class="ghost">Use a different Supabase project</button></p>
+<p><button type="button" class="ghost resetConfigBtn">Use a different Supabase project</button></p>
 </section>
 <div id="appView" hidden>
-<section class="card highlight"><h2>Add Save — Share is primary, Copy URL is last resort</h2>
-<p><b>Way 1:</b> In Instagram/Facebook → Share → Copy Link → Paste below → Analyze & File.<br><b>Way 2:</b> Open SaveBrain with <code>?url=…</code> from a share shortcut and the link is prefilled.</p>
+<section class="card highlight"><h2>Add a save</h2>
+<p>In Instagram/Facebook → Share → Copy Link → paste below.</p>
 <input id="urlInput" placeholder="Paste Instagram / Facebook Reel or Post link…">
 <button id="addBtn">Analyze & File →</button><div id="addMsg"></div>
 </section>
+<section class="card"><h2>🤖 Import from Meta AI</h2>
+<ol class="steps">
+<li>Copy a prompt: <button id="copyAllPrompt" class="ghost">All my saves</button> <button id="copyDailyPrompt" class="ghost">Saves from the last 24h</button></li>
+<li>Paste it into Meta AI (in Instagram, WhatsApp or meta.ai). Want it every morning? Ask Meta AI to run the “last 24h” prompt as a daily scheduled task.</li>
+<li>Copy Meta AI's whole reply and paste it here:</li>
+</ol>
+<pre id="promptPreview" hidden></pre>
+<textarea id="importText" rows="6" placeholder="Paste Meta AI's reply…"></textarea>
+<button id="importBtn">Import →</button><div id="importMsg"></div>
+<p class="muted">Imported posts are marked “Check claims” — AI can make mistakes, so open the original link to confirm it's really one of your saves.</p>
+</section>
 <section class="filters"><button data-filter="all" class="active">All</button><button data-filter="todo">To Do</button><button data-filter="done">Done</button><button data-filter="HIGH">🔴 High Urgency</button><button data-filter="CHECK">⚠️ Check Claims</button><span id="count"></span></section>
 <section id="list" class="list">Loading saves from Supabase…</section>
-<section class="card"><h3>How it works</h3><p><b>Supabase:</b> Table <code>savebrain_items</code> holds your saves. Row Level Security makes sure each account only sees its own rows.<br><b>Frontend (GitHub Pages):</b> This page stores nothing — it fetches your saves from Supabase on every load.</p></section>
+<section class="card"><h3>How it works</h3><p>Your saves live in table <code>savebrain_items</code> in your own Supabase project. Row Level Security makes sure each account only sees its own rows. This page stores nothing except your project's address in this browser.</p>
+<p><button type="button" class="ghost resetConfigBtn">Use a different Supabase project</button></p></section>
 </div>
 </main>
+<script src="setup.js"></script>
 <script src="app.js"></script>
 </body></html>

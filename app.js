@@ -1,17 +1,58 @@
-const CONFIG_KEY='savebrain_config';
-const $ = id => document.getElementById(id);
-// Deployed config.js (optional) wins; otherwise use what this browser saved in the setup screen.
-function getConfig(){
-  if(window.SAVEBRAIN_SUPABASE_URL && window.SAVEBRAIN_SUPABASE_KEY) return { url: window.SAVEBRAIN_SUPABASE_URL, key: window.SAVEBRAIN_SUPABASE_KEY, deployed: true };
-  try{ const c=JSON.parse(localStorage.getItem(CONFIG_KEY)); if(c?.url && c?.key) return c; }catch(e){}
-  return null;
-}
-function saveConfig(c){ try{ localStorage.setItem(CONFIG_KEY, JSON.stringify(c)); return true; }catch(e){ return false; } }
-function clearConfig(){ try{ localStorage.removeItem(CONFIG_KEY); }catch(e){} }
-let sb=null;
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// SaveBrain — main app. Config and helpers ($, esc, getConfig, clearConfig, showSetup) come from setup.js.
 const safeUrl = u => /^https?:\/\//i.test(u || '') ? esc(u) : '#';
-let allItems=[]; let filter='all'; let user=null;
+const clip = (v, n) => v == null || v === '' ? null : String(v).slice(0, n);
+let sb=null; let allItems=[]; let filter='all'; let user=null;
+
+const PROMPT_FIELDS = `Reply with ONLY a JSON array and no other text. One object per saved post:
+{"url": "direct link to the post", "platform": "instagram" or "facebook", "author": "account name", "title": "short title", "summary": "1-2 sentence summary", "category": "short topic", "urgency": "HIGH", "MEDIUM" or "LOW", "deadline": "YYYY-MM-DD if the post mentions one, otherwise empty", "action": "the next step I should take"}
+Only include posts you can actually see in my saved items, with their real links. Never invent posts or links. If you can't access my saved posts, reply exactly: NO ACCESS`;
+const PROMPTS = {
+  all: `List all my saved posts on Instagram and Facebook.\n${PROMPT_FIELDS}`,
+  daily: `List the posts I saved on Instagram and Facebook in the last 24 hours.\n${PROMPT_FIELDS}`,
+};
+
+function normalizeUrl(u){
+  try{
+    const x = new URL(String(u).trim());
+    if(!/^https?:$/.test(x.protocol)) return null;
+    if(/(^|\.)instagram\.com$/.test(x.hostname)){ x.hostname='www.instagram.com'; x.search=''; } // drop ?igsh= share tracking
+    x.hash='';
+    return x.origin + (x.pathname.replace(/\/+$/,'') || '/') + x.search;
+  }catch(e){ return null; }
+}
+function platformOf(url){
+  if(/instagram\.com/.test(url)) return 'instagram';
+  if(/facebook\.com|fb\.watch|fb\.com/.test(url)) return 'facebook';
+  return 'other';
+}
+function toItem(r, url){
+  r = r && typeof r==='object' ? r : {};
+  const urgency = String(r.urgency||'').toUpperCase();
+  return { url, platform: platformOf(url), author: (clip(r.author,100)||'Unknown').replace(/^@/,''), title: clip(r.title,200)||'Saved post — needs review',
+    summary: clip(r.summary,1000)||'', category: clip(r.category,60)||'Needs Review', urgency: ['HIGH','MEDIUM','LOW'].includes(urgency)?urgency:'MEDIUM',
+    trust: 'CHECK CLAIMS', deadline: clip(r.deadline,40), action: clip(r.action,300)||'Open original + review', status: 'todo', user_id: user.id };
+}
+// Accepts Meta AI's reply: a JSON array (even wrapped in text or ``` fences), or failing that, any links in the text.
+function parseMetaReply(text){
+  const t = text.trim();
+  if(/^NO ACCESS/i.test(t)) return { noAccess: true, items: [] };
+  let rows=null; const a=t.indexOf('['), b=t.lastIndexOf(']');
+  if(a>=0 && b>a){ try{ rows=JSON.parse(t.slice(a, b+1)); }catch(e){} }
+  if(!Array.isArray(rows)) rows = (t.match(/https?:\/\/[^\s"'<>)\]]+/g) || []);
+  const seen=new Set(), items=[];
+  for(const r of rows){
+    const url = normalizeUrl(typeof r==='string' ? r : r?.url);
+    if(!url || seen.has(url)) continue;
+    seen.add(url); items.push(toItem(r, url));
+  }
+  return { items };
+}
+async function fileItems(items){
+  const { data, error } = await sb.from('savebrain_items').upsert(items, { onConflict: 'user_id,url', ignoreDuplicates: true }).select('id');
+  if(error) throw error;
+  return data.length;
+}
+
 function renderItems(items){
   allItems=items;
   let filtered=items;
@@ -29,7 +70,7 @@ function renderItems(items){
 }
 async function loadItems(){
   const { data, error } = await sb.from('savebrain_items').select('*').order('created_at', { ascending: false });
-  if(error){ $('list').innerHTML='<div class="card">Supabase error — make sure you ran supabase/schema.sql (see README.md).</div>'; $('backendStatus').textContent='❌ Supabase error'; return; }
+  if(error){ $('list').innerHTML='<div class="card">Supabase error — '+esc(error.message)+'</div>'; $('backendStatus').textContent='❌ Supabase error'; return; }
   $('backendStatus').textContent = `✅ ${user.email} — ${data.length} saves`;
   renderItems(data);
 }
@@ -55,27 +96,23 @@ async function auth(mode){
   if(error){ $('authMsg').textContent='❌ '+error.message; return; }
   $('authMsg').textContent = mode==='up' && !data.session ? '📧 Check your email to confirm your account, then sign in.' : '';
 }
-function showSetup(){
-  $('setupView').hidden=false; $('authView').hidden=true; $('appView').hidden=true; $('signOutBtn').hidden=true;
-  $('backendStatus').textContent='Not connected';
-  $('setupForm').onsubmit=e=>{ e.preventDefault();
-    const url=$('setupUrl').value.trim().replace(/\/+$/,''), key=$('setupKey').value.trim();
-    if(!/^https:\/\/[^\s/]+$/i.test(url)){ $('setupMsg').textContent='Enter your project URL, e.g. https://abcd.supabase.co'; return; }
-    if(key.startsWith('sb_secret_') || /service_role/.test(key)){ $('setupMsg').textContent='⛔ That is a SECRET key. Never paste it in a browser — use the publishable (sb_publishable_...) key.'; return; }
-    if(!key.startsWith('sb_publishable_')){ $('setupMsg').textContent='Use the publishable key (starts with sb_publishable_).'; return; }
-    if(!saveConfig({ url, key })){ $('setupMsg').textContent='Could not save settings in this browser (private mode?).'; return; }
-    location.reload();
-  };
+async function copyPrompt(kind){
+  const text=PROMPTS[kind];
+  try{ await navigator.clipboard.writeText(text); $('importMsg').textContent='📋 Prompt copied — paste it into Meta AI.'; }
+  catch(e){ $('promptPreview').textContent=text; $('promptPreview').hidden=false; $('importMsg').textContent='Copy the prompt below and paste it into Meta AI.'; }
 }
+
 document.addEventListener('DOMContentLoaded', async ()=>{
-  const cfg=getConfig();
-  if(!cfg) return showSetup();
-  sb = window.supabase.createClient(cfg.url, cfg.key);
-  $('resetConfigBtn').hidden = !!cfg.deployed;
-  $('resetConfigBtn').onclick=async()=>{ await sb.auth.signOut(); clearConfig(); location.reload(); };
   const params=new URLSearchParams(location.search);
   const shared=params.get('shared_url')||params.get('url')||params.get('text');
   if(shared){ $('urlInput').value=shared; $('addMsg').textContent='✅ Shared from Instagram/Facebook — tap Analyze & File.'; }
+  const cfg=getConfig();
+  if(!cfg) return showSetup();
+  sb = window.supabase.createClient(cfg.url, cfg.key);
+  document.querySelectorAll('.resetConfigBtn').forEach(b=>b.onclick=async()=>{
+    if(!confirm('Disconnect this Supabase project from SaveBrain in this browser? Your saves stay in Supabase.')) return;
+    await sb.auth.signOut(); clearConfig(); location.reload();
+  });
   $('authForm').onsubmit=e=>{ e.preventDefault(); auth('in'); };
   $('signUpBtn').onclick=()=>auth('up');
   $('signOutBtn').onclick=()=>sb.auth.signOut();
@@ -84,13 +121,27 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     if(b.dataset.toggle) toggleDone(b.dataset.toggle, b.dataset.status);
     if(b.dataset.del) delItem(b.dataset.del); };
   document.querySelectorAll('.filters button').forEach(b=>b.onclick=()=>{ document.querySelectorAll('.filters button').forEach(x=>x.classList.remove('active')); b.classList.add('active'); filter=b.dataset.filter; renderItems(allItems); });
+  $('copyAllPrompt').onclick=()=>copyPrompt('all');
+  $('copyDailyPrompt').onclick=()=>copyPrompt('daily');
+  $('importBtn').onclick=async()=>{
+    const { noAccess, items } = parseMetaReply($('importText').value);
+    if(noAccess){ $('importMsg').textContent='Meta AI said it can\'t access your saved posts. Try in the Instagram app\'s Meta AI chat, or add links one by one above.'; return; }
+    if(!items.length){ $('importMsg').textContent='No post links found in that text. Paste Meta AI\'s whole reply.'; return; }
+    $('importMsg').textContent=`Importing ${items.length} posts…`;
+    try{
+      const added = await fileItems(items);
+      $('importMsg').textContent=`✅ Imported ${added} new saves${items.length>added?` (${items.length-added} were already in SaveBrain)`:''}.`;
+      $('importText').value=''; await loadItems();
+    }catch(e){ $('importMsg').textContent='❌ Supabase error — '+e.message; }
+  };
   $('addBtn').onclick=async()=>{
-    const url=$('urlInput').value.trim();
-    if(!/^https?:\/\//i.test(url)){ $('addMsg').textContent='Paste a valid http(s) link first.'; return; }
+    const url=normalizeUrl($('urlInput').value);
+    if(!url){ $('addMsg').textContent='Paste a valid http(s) link first.'; return; }
     $('addMsg').textContent='Sending to Supabase…';
-    const item={platform: url.includes('facebook')?'facebook':'instagram', url, author:'Unknown', title:'Shared Save — needs review', summary:'Shared via Share Sheet.', category:'Needs Review', urgency:'MEDIUM', trust:'CHECK CLAIMS', action:'Open original + analyze', status:'todo', user_id:user.id};
-    const { error } = await sb.from('savebrain_items').insert(item);
-    if(error){ $('addMsg').textContent='❌ Supabase error — '+error.message; return; }
-    $('addMsg').textContent='✅ Filed to Supabase!'; $('urlInput').value=''; history.replaceState(null,'',location.pathname); await loadItems();
+    try{
+      const added = await fileItems([toItem({ summary: 'Shared via Share Sheet.' }, url)]);
+      $('addMsg').textContent = added ? '✅ Filed to Supabase!' : 'ℹ️ Already in SaveBrain.';
+      $('urlInput').value=''; history.replaceState(null,'',location.pathname); await loadItems();
+    }catch(e){ $('addMsg').textContent='❌ Supabase error — '+e.message; }
   };
 });

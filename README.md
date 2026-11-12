@@ -1,43 +1,49 @@
 # 🧠 SaveBrain
 
 Turn your saved Instagram / Facebook posts into a private, filterable to-do list.
-Static frontend on GitHub Pages, data and accounts in Supabase. No server.
 
-**Live:** https://medamine-sudo.github.io/savebrain-frontend/
+**Open it:** https://medamine-sudo.github.io/savebrain-frontend/
 
 ## Features
-- Bring your own Supabase project — no shared backend, no shared keys
-- Email + password accounts (Supabase Auth) — each user only sees their own saves
-- Paste a post/reel link (or open `?url=…` from a share shortcut) to file it
-- Filter by To Do / Done / High urgency / Check claims
-- Mark done, delete
+- **Your own private database** — every user connects their own free Supabase project. There is no shared backend and no key in this repo or on the site.
+- **Import from Meta AI** — copy a ready-made prompt, paste it into Meta AI, paste the reply back. Works daily with a Meta AI scheduled task.
+- **Paste a link** from Instagram/Facebook's Share → Copy Link.
+- Filter by To Do / Done / High urgency / Check claims; mark done; delete.
 
-## Use it with your own Supabase
-SaveBrain is bring-your-own-backend: the hosted site ships **no** Supabase key.
-Each person connects their own free Supabase project, and the URL + key are stored only in their browser.
+## Setup (about 3 minutes, no coding)
+1. Open SaveBrain.
+2. Click **Create a free Supabase account** and sign up.
+3. Click **Generate an access token**, copy it, paste it into SaveBrain, click **Continue**.
+4. Pick an email + password for SaveBrain and click **Set up SaveBrain**.
 
-1. Create a project at [supabase.com](https://supabase.com).
-2. SQL Editor → run [`supabase/schema.sql`](supabase/schema.sql).
-3. Authentication → URL Configuration → set *Site URL* to
-   `https://medamine-sudo.github.io/savebrain-frontend/` (or your fork's URL) and add it to *Redirect URLs*.
-4. Project Settings → API Keys → copy your **publishable** key (`sb_publishable_...`).
-   Never use a `sb_secret_...` / `service_role` key — the app refuses them.
-5. Open SaveBrain, paste your project URL + publishable key, then create an account.
+SaveBrain then creates your Supabase project, the table and its privacy rules, sets up sign-in,
+creates your account and locks sign-ups so nobody else can use your project.
+When it's done you can delete the access token on the Supabase tokens page.
 
-## Security model
-- The publishable key is designed to be used in browsers; it is not a secret. Your data is protected by
-  **Row Level Security**: every row has a `user_id`, and policies only allow `auth.uid() = user_id`.
-- No keys are committed to this repo. `config.js` is git-ignored.
+> Free Supabase plans allow 2 active projects. If you already have 2, choose
+> “Use existing” and SaveBrain will add its table to that project instead.
 
-## Deploy your own fork (optional)
-1. Fork, then Settings → Pages → Source: **GitHub Actions**. Push to `main` to deploy.
-2. Optional: to bake one Supabase project into your deployment (so visitors skip the setup screen),
-   add Actions secrets `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`. That key will then be visible
-   in the deployed `config.js`, which is fine as long as RLS is on.
+## Daily sync with Meta AI
+1. In SaveBrain, click **Saves from the last 24h** to copy the prompt.
+2. In Meta AI, ask it to run that prompt every morning as a scheduled task.
+3. Each morning, copy Meta AI's reply into **Import from Meta AI**. Links already in SaveBrain are skipped.
 
-## Local development
+Imported posts are marked “Check claims”: AI can make mistakes, so open the original link to confirm.
+
+## Security
+- The access token is used only during setup, only sent to `api.supabase.com`, and never stored.
+- After setup the browser keeps only your project URL and **publishable** key. The app refuses secret keys.
+- Data is protected by Row Level Security: each row has a `user_id`, only signed-in users can reach
+  the table, and they only see rows where `auth.uid() = user_id`. See [`supabase/schema.sql`](supabase/schema.sql).
+- On projects created by setup, new sign-ups are disabled after your account is created.
+
+## Manual setup (advanced)
+Run [`supabase/schema.sql`](supabase/schema.sql) in your project's SQL Editor, add the SaveBrain URL
+to Authentication → URL Configuration → Redirect URLs, then use **Advanced: I already set up a project**
+on the setup screen with your project URL and publishable key.
+
+## Development
 ```bash
-cp config.example.js config.js   # fill in your URL + publishable key
-python3 -m http.server 8000      # open http://localhost:8000
+python3 -m http.server 8000   # open http://localhost:8000
 ```
-Add `http://localhost:8000` to Supabase Redirect URLs if you sign up locally.
+Pushing to `main` deploys to GitHub Pages via `.github/workflows/deploy.yml`.

@@ -22,17 +22,12 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      # Optional: set SUPABASE_URL + SUPABASE_PUBLISHABLE_KEY secrets to bake a project into the site.
-      # Without them, visitors connect their own Supabase project from the setup screen.
+      # No Supabase keys are deployed: each visitor connects their own project from the setup screen.
       - name: Build site
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
         run: |
-          mkdir -p _site
-          cp index.html app.js style.css .nojekyll _site/
-          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_PUBLISHABLE_KEY" ]; then echo "No secrets set: building bring-your-own-Supabase site"; exit 0; fi
-          printf 'window.SAVEBRAIN_SUPABASE_URL = "%s";\nwindow.SAVEBRAIN_SUPABASE_KEY = "%s";\n' "$SUPABASE_URL" "$SUPABASE_PUBLISHABLE_KEY" > _site/config.js
+          mkdir -p _site/supabase
+          cp index.html app.js setup.js style.css .nojekyll _site/
+          cp supabase/schema.sql _site/supabase/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

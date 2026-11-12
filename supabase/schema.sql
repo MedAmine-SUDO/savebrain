@@ -1,5 +1,6 @@
 -- SaveBrain schema: every save belongs to one signed-in user.
--- Run in Supabase Dashboard -> SQL Editor. Safe to re-run.
+-- The SaveBrain setup screen runs this automatically. To run it by hand:
+-- Supabase Dashboard -> SQL Editor -> paste -> Run. Safe to re-run.
 
 create table if not exists savebrain_items (
   id text primary key default gen_random_uuid()::text,
@@ -12,6 +13,12 @@ create table if not exists savebrain_items (
 alter table savebrain_items
   add column if not exists user_id uuid references auth.users(id) on delete cascade default auth.uid();
 create index if not exists savebrain_items_user_id_idx on savebrain_items(user_id);
+-- One row per link per user, so re-importing from Meta AI never creates duplicates
+create unique index if not exists savebrain_items_user_url_idx on savebrain_items(user_id, url);
+
+-- Only signed-in users can reach the table, and RLS below limits them to their own rows
+revoke all on savebrain_items from anon;
+grant select, insert, update, delete on savebrain_items to authenticated;
 
 alter table savebrain_items enable row level security;
 
