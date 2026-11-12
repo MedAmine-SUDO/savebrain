@@ -6,12 +6,20 @@
 <body>
 <header><div class="logo">🧠 SaveBrain</div><div id="backendStatus" class="status">Checking Supabase…</div><button id="signOutBtn" class="ghost" hidden>Sign out</button></header>
 <main>
+<section id="setupView" class="card highlight" hidden><h2>Connect your Supabase project</h2>
+<p>SaveBrain runs on <b>your own</b> free Supabase project. Your URL and key are saved only in this browser. See <a href="https://github.com/MedAmine-SUDO/savebrain-frontend#use-it-with-your-own-supabase" target="_blank" rel="noopener noreferrer">setup steps</a>.</p>
+<form id="setupForm"><input id="setupUrl" type="url" placeholder="https://your-project.supabase.co" required>
+<input id="setupKey" placeholder="sb_publishable_..." autocomplete="off" required>
+<button type="submit">Save & connect</button></form>
+<div id="setupMsg"></div>
+</section>
 <section id="authView" class="card highlight" hidden><h2>Sign in to SaveBrain</h2>
 <p>Your saves are private — only you can see them.</p>
 <form id="authForm"><input id="authEmail" type="email" placeholder="Email" autocomplete="email" required>
 <input id="authPassword" type="password" placeholder="Password (min 6 characters)" autocomplete="current-password" minlength="6" required>
 <div class="actions"><button type="submit" id="signInBtn">Sign in</button><button type="button" id="signUpBtn" class="ghost">Create account</button></div></form>
 <div id="authMsg"></div>
+<p><button type="button" id="resetConfigBtn" class="ghost">Use a different Supabase project</button></p>
 </section>
 <div id="appView" hidden>
 <section class="card highlight"><h2>Add Save — Share is primary, Copy URL is last resort</h2>

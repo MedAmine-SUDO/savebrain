@@ -1,5 +1,14 @@
-const sb = window.supabase.createClient(window.SAVEBRAIN_SUPABASE_URL, window.SAVEBRAIN_SUPABASE_KEY);
+const CONFIG_KEY='savebrain_config';
 const $ = id => document.getElementById(id);
+// Deployed config.js (optional) wins; otherwise use what this browser saved in the setup screen.
+function getConfig(){
+  if(window.SAVEBRAIN_SUPABASE_URL && window.SAVEBRAIN_SUPABASE_KEY) return { url: window.SAVEBRAIN_SUPABASE_URL, key: window.SAVEBRAIN_SUPABASE_KEY, deployed: true };
+  try{ const c=JSON.parse(localStorage.getItem(CONFIG_KEY)); if(c?.url && c?.key) return c; }catch(e){}
+  return null;
+}
+function saveConfig(c){ try{ localStorage.setItem(CONFIG_KEY, JSON.stringify(c)); return true; }catch(e){ return false; } }
+function clearConfig(){ try{ localStorage.removeItem(CONFIG_KEY); }catch(e){} }
+let sb=null;
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const safeUrl = u => /^https?:\/\//i.test(u || '') ? esc(u) : '#';
 let allItems=[]; let filter='all'; let user=null;
@@ -33,7 +42,7 @@ async function delItem(id){
 }
 function showView(session){
   user = session?.user || null;
-  $('authView').hidden = !!user; $('appView').hidden = !user; $('signOutBtn').hidden = !user;
+  $('setupView').hidden = true; $('authView').hidden = !!user; $('appView').hidden = !user; $('signOutBtn').hidden = !user;
   if(user) loadItems(); else $('backendStatus').textContent='Signed out';
 }
 async function auth(mode){
@@ -46,8 +55,24 @@ async function auth(mode){
   if(error){ $('authMsg').textContent='❌ '+error.message; return; }
   $('authMsg').textContent = mode==='up' && !data.session ? '📧 Check your email to confirm your account, then sign in.' : '';
 }
+function showSetup(){
+  $('setupView').hidden=false; $('authView').hidden=true; $('appView').hidden=true; $('signOutBtn').hidden=true;
+  $('backendStatus').textContent='Not connected';
+  $('setupForm').onsubmit=e=>{ e.preventDefault();
+    const url=$('setupUrl').value.trim().replace(/\/+$/,''), key=$('setupKey').value.trim();
+    if(!/^https:\/\/[^\s/]+$/i.test(url)){ $('setupMsg').textContent='Enter your project URL, e.g. https://abcd.supabase.co'; return; }
+    if(key.startsWith('sb_secret_') || /service_role/.test(key)){ $('setupMsg').textContent='⛔ That is a SECRET key. Never paste it in a browser — use the publishable (sb_publishable_...) key.'; return; }
+    if(!key.startsWith('sb_publishable_')){ $('setupMsg').textContent='Use the publishable key (starts with sb_publishable_).'; return; }
+    if(!saveConfig({ url, key })){ $('setupMsg').textContent='Could not save settings in this browser (private mode?).'; return; }
+    location.reload();
+  };
+}
 document.addEventListener('DOMContentLoaded', async ()=>{
-  if(!window.SAVEBRAIN_SUPABASE_URL || !window.SAVEBRAIN_SUPABASE_KEY){ $('backendStatus').textContent='⚠️ config.js missing'; return; }
+  const cfg=getConfig();
+  if(!cfg) return showSetup();
+  sb = window.supabase.createClient(cfg.url, cfg.key);
+  $('resetConfigBtn').hidden = !!cfg.deployed;
+  $('resetConfigBtn').onclick=async()=>{ await sb.auth.signOut(); clearConfig(); location.reload(); };
   const params=new URLSearchParams(location.search);
   const shared=params.get('shared_url')||params.get('url')||params.get('text');
   if(shared){ $('urlInput').value=shared; $('addMsg').textContent='✅ Shared from Instagram/Facebook — tap Analyze & File.'; }
