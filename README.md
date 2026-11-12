@@ -5,10 +5,13 @@ Turn your saved Instagram / Facebook posts into a private, filterable to-do list
 **Open it:** https://medamine-sudo.github.io/savebrain-frontend/
 
 ## Features
-- **Your own private database** — every user connects their own free Supabase project. There is no shared backend and no key in this repo or on the site.
+- **Daily Home** — what needs action, deadlines and fake-risk at a glance, plus a one-card-at-a-time **Daily Review**.
+- **Full analysis** for every save — summary, extracted steps, why it's urgent, trust signals, links and an action checklist.
+- **Fake detector** — every save is scored *Verified · Likely Legit · Check Claims · High Fake Risk*.
+- **Queue & reminders** — HIGH urgency and deadline items first; reminders can be added to your phone's calendar.
 - **Import from Meta AI** — copy a ready-made prompt, paste it into Meta AI, paste the reply back. Works daily with a Meta AI scheduled task.
-- **Paste a link** from Instagram/Facebook's Share → Copy Link.
-- Filter by To Do / Done / High urgency / Check claims; mark done; delete.
+- Filters, search, CSV export, installable on Android, and **Connect another device** with a QR code.
+- **Your own private database** — every user connects their own free Supabase project. No shared backend, no key in this repo.
 
 ## Setup (about 3 minutes, no coding)
 1. Open SaveBrain.
@@ -53,8 +56,15 @@ On your first device, click **📱 Connect another device** and open the link (o
 other one, then sign in. The link holds your project address and publishable key, never your password —
 only open it on your own devices.
 
+## Updating an older SaveBrain database
+If SaveBrain shows **“Your database needs a one-time update”**, press *Copy update*, open the SQL Editor,
+paste and press *Run*. It adds the new columns and the reminders table and keeps your saves.
+
 ## Development
+React + TypeScript + Tailwind, built with Vite.
 ```bash
-python3 -m http.server 8000   # open http://localhost:8000
+npm install
+npm run dev     # http://localhost:5173
+npm run build   # type-check + production build in dist/
 ```
-Pushing to `main` deploys to GitHub Pages via `.github/workflows/deploy.yml`.
+Pushing to `main` builds and deploys to GitHub Pages via `.github/workflows/deploy.yml`.

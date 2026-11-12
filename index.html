@@ -1,66 +1,17 @@
-<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SaveBrain — Saved Posts Intelligence</title>
-<link rel="stylesheet" href="style.css">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.min.js"></script></head>
-<body>
-<header><div class="logo">🧠 SaveBrain</div><div id="backendStatus" class="status">Loading…</div><button id="signOutBtn" class="ghost" hidden>Sign out</button></header>
-<main>
-<section id="setupView" class="card highlight" hidden><h2>Set up SaveBrain (about 3 minutes)</h2>
-<p>SaveBrain keeps your saves in <b>your own</b> free Supabase database — nobody else, including the SaveBrain author, can see them.</p>
-<ol class="steps">
-<li><a href="https://supabase.com/dashboard/sign-up" target="_blank" rel="noopener noreferrer">Create a free Supabase account</a> (skip if you have one).</li>
-<li><a href="https://supabase.com/dashboard/account/tokens" target="_blank" rel="noopener noreferrer">Generate an access token</a> → name it “SaveBrain setup” → copy it and paste it here:
-<input id="setupToken" type="password" placeholder="sbp_..." autocomplete="off">
-<button id="setupLoadBtn">Continue →</button></li>
-</ol>
-<div id="setupStep2" hidden>
-<label>Project <select id="setupProject"></select></label>
-<label id="setupOrgLabel">Organization <select id="setupOrg"></select></label>
-<p>Choose the email and password you'll use to sign in to SaveBrain:</p>
-<input id="setupEmail" type="email" placeholder="Email" autocomplete="email">
-<input id="setupPassword" type="password" placeholder="Password (min 6 characters)" autocomplete="new-password" minlength="6">
-<button id="setupRunBtn">Set up SaveBrain →</button>
-</div>
-<ul id="setupLog" class="log"></ul>
-<div id="setupMsg"></div>
-<p class="muted">🔒 Your token is only sent to api.supabase.com, only kept in this tab, and never saved. When setup is done you can delete it on the tokens page.</p>
-<p class="muted">Already have a Supabase project? Choose it in the list after step 2 — setup adds SaveBrain to it safely. Using SaveBrain on another device? Open the “Connect another device” link from your first device instead.</p>
-</section>
-<section id="authView" class="card highlight" hidden><h2>Sign in to SaveBrain</h2>
-<p>Use the email and password you chose during setup.</p>
-<form id="authForm"><input id="authEmail" type="email" placeholder="Email" autocomplete="email" required>
-<input id="authPassword" type="password" placeholder="Password (min 6 characters)" autocomplete="current-password" minlength="6" required>
-<button type="submit">Sign in</button></form>
-<div id="authMsg"></div>
-<p><button type="button" class="ghost resetConfigBtn">Use a different Supabase project</button></p>
-</section>
-<div id="appView" hidden>
-<section class="card highlight"><h2>Add a save</h2>
-<p>In Instagram/Facebook → Share → Copy Link → paste below.</p>
-<input id="urlInput" placeholder="Paste Instagram / Facebook Reel or Post link…">
-<button id="addBtn">Analyze & File →</button><div id="addMsg"></div>
-</section>
-<section class="card"><h2>🤖 Import from Meta AI</h2>
-<ol class="steps">
-<li>Copy a prompt: <button id="copyAllPrompt" class="ghost">All my saves</button> <button id="copyDailyPrompt" class="ghost">Saves from the last 24h</button></li>
-<li>Paste it into Meta AI (in Instagram, WhatsApp or meta.ai). Want it every morning? Ask Meta AI to run the “last 24h” prompt as a daily scheduled task.</li>
-<li>Copy Meta AI's whole reply and paste it here:</li>
-</ol>
-<pre id="promptPreview" hidden></pre>
-<textarea id="importText" rows="6" placeholder="Paste Meta AI's reply…"></textarea>
-<button id="importBtn">Import →</button><div id="importMsg"></div>
-<p class="muted">Imported posts are marked “Check claims” — AI can make mistakes, so open the original link to confirm it's really one of your saves.</p>
-</section>
-<section class="filters"><button data-filter="all" class="active">All</button><button data-filter="todo">To Do</button><button data-filter="done">Done</button><button data-filter="HIGH">🔴 High Urgency</button><button data-filter="CHECK">⚠️ Check Claims</button><span id="count"></span></section>
-<section id="list" class="list">Loading saves from Supabase…</section>
-<section class="card"><h3>How it works</h3><p>Your saves live in table <code>savebrain_items</code> in your own Supabase project. Row Level Security makes sure each account only sees its own rows. This page stores nothing except your project's address in this browser.</p>
-<p><button type="button" id="connectDeviceBtn" class="ghost">📱 Connect another device</button> <button type="button" class="ghost resetConfigBtn">Use a different Supabase project</button></p>
-<div id="connectBox" hidden><p>Open this link on your other device (or scan the code), then sign in with your email and password. It contains your project's address and publishable key — <b>only open it on your own devices</b>, don't post it.</p>
-<div id="connectQr" class="qr"></div><input id="connectLink" readonly><button type="button" id="copyConnectLink">Copy link</button></div></section>
-</div>
-</main>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="setup.js"></script>
-<script src="app.js"></script>
-</body></html>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0F172A" />
+    <meta name="description" content="Turn your saved Instagram and Facebook posts into a private, prioritized to-do list." />
+    <title>SaveBrain</title>
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icon-192.png" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
