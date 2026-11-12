@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SaveBrain — Saved Posts Intelligence</title>
+<link rel="stylesheet" href="style.css"><script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.min.js"></script></head>
+<body>
+<header><div class="logo">🧠 SaveBrain</div><div id="backendStatus" class="status">Checking Supabase…</div><button id="signOutBtn" class="ghost" hidden>Sign out</button></header>
+<main>
+<section id="authView" class="card highlight" hidden><h2>Sign in to SaveBrain</h2>
+<p>Your saves are private — only you can see them.</p>
+<form id="authForm"><input id="authEmail" type="email" placeholder="Email" autocomplete="email" required>
+<input id="authPassword" type="password" placeholder="Password (min 6 characters)" autocomplete="current-password" minlength="6" required>
+<div class="actions"><button type="submit" id="signInBtn">Sign in</button><button type="button" id="signUpBtn" class="ghost">Create account</button></div></form>
+<div id="authMsg"></div>
+</section>
+<div id="appView" hidden>
+<section class="card highlight"><h2>Add Save — Share is primary, Copy URL is last resort</h2>
+<p><b>Way 1:</b> In Instagram/Facebook → Share → Copy Link → Paste below → Analyze & File.<br><b>Way 2:</b> Open SaveBrain with <code>?url=…</code> from a share shortcut and the link is prefilled.</p>
+<input id="urlInput" placeholder="Paste Instagram / Facebook Reel or Post link…">
+<button id="addBtn">Analyze & File →</button><div id="addMsg"></div>
+</section>
+<section class="filters"><button data-filter="all" class="active">All</button><button data-filter="todo">To Do</button><button data-filter="done">Done</button><button data-filter="HIGH">🔴 High Urgency</button><button data-filter="CHECK">⚠️ Check Claims</button><span id="count"></span></section>
+<section id="list" class="list">Loading saves from Supabase…</section>
+<section class="card"><h3>How it works</h3><p><b>Supabase:</b> Table <code>savebrain_items</code> holds your saves. Row Level Security makes sure each account only sees its own rows.<br><b>Frontend (GitHub Pages):</b> This page stores nothing — it fetches your saves from Supabase on every load.</p></section>
+</div>
+</main>
+<script src="app.js"></script>
+</body></html>
