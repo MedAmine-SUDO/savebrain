@@ -1,4 +1,4 @@
-// SaveBrain — main app. Config and helpers ($, esc, getConfig, clearConfig, showSetup) come from setup.js.
+// SaveBrain — main app. Config and helpers ($, esc, getConfig, clearConfig, showSetup, connectLink) come from setup.js.
 const safeUrl = u => /^https?:\/\//i.test(u || '') ? esc(u) : '#';
 const clip = (v, n) => v == null || v === '' ? null : String(v).slice(0, n);
 let sb=null; let allItems=[]; let filter='all'; let user=null;
@@ -28,7 +28,7 @@ function platformOf(url){
 function toItem(r, url){
   r = r && typeof r==='object' ? r : {};
   const urgency = String(r.urgency||'').toUpperCase();
-  return { url, platform: platformOf(url), author: (clip(r.author,100)||'Unknown').replace(/^@/,''), title: clip(r.title,200)||'Saved post — needs review',
+  return { id: crypto.randomUUID(), url, platform: platformOf(url), author: (clip(r.author,100)||'Unknown').replace(/^@/,''), title: clip(r.title,200)||'Saved post — needs review',
     summary: clip(r.summary,1000)||'', category: clip(r.category,60)||'Needs Review', urgency: ['HIGH','MEDIUM','LOW'].includes(urgency)?urgency:'MEDIUM',
     trust: 'CHECK CLAIMS', deadline: clip(r.deadline,40), action: clip(r.action,300)||'Open original + review', status: 'todo', user_id: user.id };
 }
@@ -86,20 +86,21 @@ function showView(session){
   $('setupView').hidden = true; $('authView').hidden = !!user; $('appView').hidden = !user; $('signOutBtn').hidden = !user;
   if(user) loadItems(); else $('backendStatus').textContent='Signed out';
 }
-async function auth(mode){
+async function signIn(){
   const email=$('authEmail').value.trim(), password=$('authPassword').value;
-  if(!email || password.length<6){ $('authMsg').textContent='Enter an email and a password of at least 6 characters.'; return; }
-  $('authMsg').textContent = mode==='up' ? 'Creating account…' : 'Signing in…';
-  const { data, error } = mode==='up'
-    ? await sb.auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname } })
-    : await sb.auth.signInWithPassword({ email, password });
-  if(error){
-    $('authMsg').textContent = /not confirmed/i.test(error.message) ? '❌ Your email isn\'t confirmed yet. Click “Use a different Supabase project” below, run setup again with the same project and email, and it will confirm your account.'
-      : /signups? (are )?not allowed/i.test(error.message) ? '❌ This SaveBrain is locked to its owner. Sign in with the email and password you chose during setup.'
-      : '❌ '+error.message;
-    return;
-  }
-  $('authMsg').textContent = mode==='up' && !data.session ? '📧 Check your email to confirm your account, then sign in.' : '';
+  if(!email || !password){ $('authMsg').textContent='Enter your email and password.'; return; }
+  $('authMsg').textContent='Signing in…';
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  $('authMsg').textContent = !error ? ''
+    : /not confirmed/i.test(error.message) ? '❌ Your email isn\'t confirmed yet. Click “Use a different Supabase project” below and run setup again with the same project and email — it will confirm your account.'
+    : /invalid/i.test(error.message) ? '❌ Wrong email or password. Use the ones you chose during setup.'
+    : '❌ '+error.message;
+}
+function showConnectBox(cfg){
+  const link=connectLink(cfg);
+  $('connectLink').value=link; $('connectBox').hidden=false; $('connectQr').innerHTML='';
+  if(window.QRCode) new QRCode($('connectQr'), { text: link, width: 200, height: 200 });
+  $('copyConnectLink').onclick=async()=>{ try{ await navigator.clipboard.writeText(link); $('copyConnectLink').textContent='✅ Copied'; }catch(e){ $('connectLink').select(); } };
 }
 async function copyPrompt(kind){
   const text=PROMPTS[kind];
@@ -111,6 +112,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   const params=new URLSearchParams(location.search);
   const shared=params.get('shared_url')||params.get('url')||params.get('text');
   if(shared){ $('urlInput').value=shared; $('addMsg').textContent='✅ Shared from Instagram/Facebook — tap Analyze & File.'; }
+  consumeConnectLink();
   const cfg=getConfig();
   if(!cfg) return showSetup();
   sb = window.supabase.createClient(cfg.url, cfg.key);
@@ -118,8 +120,8 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     if(!confirm('Disconnect this Supabase project from SaveBrain in this browser? Your saves stay in Supabase.')) return;
     await sb.auth.signOut(); clearConfig(); location.reload();
   });
-  $('authForm').onsubmit=e=>{ e.preventDefault(); auth('in'); };
-  $('signUpBtn').onclick=()=>auth('up');
+  $('authForm').onsubmit=e=>{ e.preventDefault(); signIn(); };
+  $('connectDeviceBtn').onclick=()=>showConnectBox(cfg);
   $('signOutBtn').onclick=()=>sb.auth.signOut();
   sb.auth.onAuthStateChange((_event, session)=>setTimeout(()=>showView(session)));
   $('list').onclick=e=>{ const b=e.target.closest('button'); if(!b) return;

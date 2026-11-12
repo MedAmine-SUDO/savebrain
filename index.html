@@ -25,19 +25,13 @@
 <ul id="setupLog" class="log"></ul>
 <div id="setupMsg"></div>
 <p class="muted">🔒 Your token is only sent to api.supabase.com, only kept in this tab, and never saved. When setup is done you can delete it on the tokens page.</p>
-<details><summary>Advanced: I already set up a project</summary>
-<p>Run <a href="supabase/schema.sql" target="_blank">supabase/schema.sql</a> in your project's SQL Editor, then paste its URL and publishable key.</p>
-<form id="setupForm"><input id="setupUrl" type="url" placeholder="https://your-project.supabase.co" required>
-<input id="setupKey" placeholder="sb_publishable_..." autocomplete="off" required>
-<button type="submit">Save & connect</button></form>
-<div id="manualMsg"></div>
-</details>
+<p class="muted">Already have a Supabase project? Choose it in the list after step 2 — setup adds SaveBrain to it safely. Using SaveBrain on another device? Open the “Connect another device” link from your first device instead.</p>
 </section>
 <section id="authView" class="card highlight" hidden><h2>Sign in to SaveBrain</h2>
-<p>Your saves are private — only you can see them.</p>
+<p>Use the email and password you chose during setup.</p>
 <form id="authForm"><input id="authEmail" type="email" placeholder="Email" autocomplete="email" required>
 <input id="authPassword" type="password" placeholder="Password (min 6 characters)" autocomplete="current-password" minlength="6" required>
-<div class="actions"><button type="submit">Sign in</button><button type="button" id="signUpBtn" class="ghost">Create account</button></div></form>
+<button type="submit">Sign in</button></form>
 <div id="authMsg"></div>
 <p><button type="button" class="ghost resetConfigBtn">Use a different Supabase project</button></p>
 </section>
@@ -61,9 +55,12 @@
 <section class="filters"><button data-filter="all" class="active">All</button><button data-filter="todo">To Do</button><button data-filter="done">Done</button><button data-filter="HIGH">🔴 High Urgency</button><button data-filter="CHECK">⚠️ Check Claims</button><span id="count"></span></section>
 <section id="list" class="list">Loading saves from Supabase…</section>
 <section class="card"><h3>How it works</h3><p>Your saves live in table <code>savebrain_items</code> in your own Supabase project. Row Level Security makes sure each account only sees its own rows. This page stores nothing except your project's address in this browser.</p>
-<p><button type="button" class="ghost resetConfigBtn">Use a different Supabase project</button></p></section>
+<p><button type="button" id="connectDeviceBtn" class="ghost">📱 Connect another device</button> <button type="button" class="ghost resetConfigBtn">Use a different Supabase project</button></p>
+<div id="connectBox" hidden><p>Open this link on your other device (or scan the code), then sign in with your email and password. It contains your project's address and publishable key — <b>only open it on your own devices</b>, don't post it.</p>
+<div id="connectQr" class="qr"></div><input id="connectLink" readonly><button type="button" id="copyConnectLink">Copy link</button></div></section>
 </div>
 </main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="setup.js"></script>
 <script src="app.js"></script>
 </body></html>

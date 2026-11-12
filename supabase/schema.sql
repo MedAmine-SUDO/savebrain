@@ -10,6 +10,16 @@ create table if not exists savebrain_items (
   created_at timestamptz default now()
 );
 
+-- Older copies of this table may lack an id default; set one matching the column's type
+do $$ begin
+  if (select data_type from information_schema.columns
+      where table_schema = 'public' and table_name = 'savebrain_items' and column_name = 'id') = 'uuid' then
+    alter table savebrain_items alter column id set default gen_random_uuid();
+  else
+    alter table savebrain_items alter column id set default gen_random_uuid()::text;
+  end if;
+end $$;
+
 alter table savebrain_items
   add column if not exists user_id uuid references auth.users(id) on delete cascade default auth.uid();
 create index if not exists savebrain_items_user_id_idx on savebrain_items(user_id);

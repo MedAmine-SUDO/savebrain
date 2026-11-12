@@ -112,14 +112,19 @@ async function runSetup(){
   }
 }
 
-function saveManualConfig(e){
-  e.preventDefault();
-  const url=$('setupUrl').value.trim().replace(/\/+$/,''), key=$('setupKey').value.trim();
-  if(!/^https:\/\/[^\s/]+$/i.test(url)){ $('manualMsg').textContent='Enter your project URL, e.g. https://abcd.supabase.co'; return; }
-  if(key.startsWith('sb_secret_') || /service_role/.test(key)){ $('manualMsg').textContent='⛔ That is a SECRET key. Never paste it in a browser — use the publishable (sb_publishable_...) key.'; return; }
-  if(!key.startsWith('sb_publishable_')){ $('manualMsg').textContent='Use the publishable key (starts with sb_publishable_).'; return; }
-  if(!saveConfig({ url, key })){ $('manualMsg').textContent='Could not save settings in this browser (private mode?).'; return; }
-  location.reload();
+// "Connect another device": the link carries only the project URL + publishable key, in the #fragment
+// (never sent to any server). The person still has to sign in with their password on the new device.
+function validConfig(c){
+  return c && /^https:\/\/[^\s/]+$/i.test(c.url||'') && /^sb_publishable_[\w-]+$/.test(c.key||'');
+}
+function connectLink(cfg){
+  return location.origin + location.pathname + '#connect=' + encodeURIComponent(btoa(JSON.stringify({ url: cfg.url, key: cfg.key })));
+}
+function consumeConnectLink(){
+  const m = location.hash.match(/^#connect=(.+)$/);
+  if(!m) return;
+  history.replaceState(null, '', location.pathname + location.search);
+  try{ const c=JSON.parse(atob(decodeURIComponent(m[1]))); if(validConfig(c)) saveConfig({ url: c.url, key: c.key }); }catch(e){}
 }
 
 function showSetup(){
@@ -127,5 +132,4 @@ function showSetup(){
   $('backendStatus').textContent='Not set up yet';
   $('setupLoadBtn').onclick=loadAccount;
   $('setupRunBtn').onclick=runSetup;
-  $('setupForm').onsubmit=saveManualConfig;
 }

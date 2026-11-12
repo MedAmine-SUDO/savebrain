@@ -37,10 +37,21 @@ Imported posts are marked “Check claims”: AI can make mistakes, so open the 
   the table, and they only see rows where `auth.uid() = user_id`. See [`supabase/schema.sql`](supabase/schema.sql).
 - On projects created by setup, new sign-ups are disabled after your account is created.
 
-## Manual setup (advanced)
-Run [`supabase/schema.sql`](supabase/schema.sql) in your project's SQL Editor, add the SaveBrain URL
-to Authentication → URL Configuration → Redirect URLs, then use **Advanced: I already set up a project**
-on the setup screen with your project URL and publishable key.
+## Already have a Supabase project?
+Run the same setup and pick **Use existing** after pasting your token. Setup adds the table and privacy
+rules, adds SaveBrain to your sign-in settings, and creates + confirms your account. It doesn't lock
+sign-ups on existing projects; if the project is only for SaveBrain, turn off *Allow new users to sign up*
+in Supabase → Authentication → Sign In / Providers.
+
+Saves created before accounts existed have no owner. Give them to yourself in the SQL Editor:
+```sql
+update savebrain_items set user_id = (select id from auth.users where email = 'you@example.com') where user_id is null;
+```
+
+## Using SaveBrain on another device
+On your first device, click **📱 Connect another device** and open the link (or scan the QR code) on the
+other one, then sign in. The link holds your project address and publishable key, never your password —
+only open it on your own devices.
 
 ## Development
 ```bash
