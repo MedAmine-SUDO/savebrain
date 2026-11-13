@@ -1,0 +1,14 @@
+name = "savebrain-setup"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+
+# Never log requests: tokens pass through this Worker.
+[observability]
+enabled = false
+
+[vars]
+CLIENT_ID = "ca281632-e082-48ab-b8ec-81630a7abc82"
+# Sites allowed to use this proxy (forks: put your own GitHub Pages origin here).
+ALLOWED_ORIGINS = "https://medamine-sudo.github.io, http://localhost:5173, http://localhost:4173"
+
+# CLIENT_SECRET is set with: npx wrangler secret put CLIENT_SECRET

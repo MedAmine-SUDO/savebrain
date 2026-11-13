@@ -1,11 +1,11 @@
-import { useState } from "react";
-import { ArrowRight, CheckCircle2, ExternalLink, KeyRound, Loader2, Lock, UserPlus } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ArrowRight, CheckCircle2, ExternalLink, KeyRound, Link2, Loader2, Lock, UserPlus } from "lucide-react";
 import { Frame } from "./AppIcon";
 import { saveConfig } from "../lib/config";
-import { loadAccount, managementApi, runSetup, type Mgmt, type Org, type Project } from "../lib/setup";
+import { finishConnect, loadAccount, managementApi, runSetup, startConnect, type Mgmt, type Org, type Project } from "../lib/setup";
 
 const input = "mt-1 w-full border border-[var(--line)] rounded-xl px-3 py-2.5 text-sm bg-[var(--surface)] outline-none min-h-[44px]";
-// The scoped-token permissions setup needs (names as on supabase.com/dashboard/account/tokens).
+// Fallback when "Connect with Supabase" isn't possible: the scoped-token permissions setup needs (names as on supabase.com/dashboard/account/tokens).
 const TOKEN_PERMISSIONS = [
   ["Organizations", "Read"],
   ["Projects (account-wide)", "Read"],
@@ -33,15 +33,22 @@ export function SetupScreen() {
   const [done, setDone] = useState(false);
   const [createdRef, setCreatedRef] = useState<string | null>(null); // reused on retry so we never create two projects
 
-  async function connect() {
-    if (!token.trim().startsWith("sbp_")) { setMsg("That doesn't look like an access token — it should start with sbp_."); return; }
+  async function connectAccount(getToken: () => Promise<string | null>) {
     setBusy(true); setMsg("Checking your Supabase account…");
     try {
-      const api = managementApi(token.trim());
+      const t = await getToken();
+      if (!t) { setMsg(""); setBusy(false); return; }
+      const api = managementApi(t);
       const acc = await loadAccount(api);
       setOrgs(acc.orgs); setProjects(acc.projects); setOrg(acc.orgs[0].slug); setMgmt(() => api); setMsg("");
     } catch (e) { setMsg("❌ " + (e as Error).message); }
     setBusy(false);
+  }
+  // Back from Supabase's consent page?
+  useEffect(() => { if (/[?&](code|error)=/.test(location.search)) connectAccount(finishConnect); }, []);
+  function connectWithToken() {
+    if (!token.trim().startsWith("sbp_")) { setMsg("That doesn't look like an access token — it should start with sbp_."); return; }
+    connectAccount(async () => token.trim());
   }
   async function setup() {
     if (!mgmt) return;
@@ -61,62 +68,70 @@ export function SetupScreen() {
 
   return (
     <Frame status="Not set up yet">
-      <p className="text-xs font-bold tracking-widest text-[var(--muted)] uppercase">One-time setup · about 3 minutes</p>
+      <p className="text-xs font-bold tracking-widest text-[var(--muted)] uppercase">One-time setup · about 2 minutes</p>
       <h1 className="text-[clamp(1.5rem,3vw,2rem)] font-extrabold leading-tight tracking-tight mt-1">Set up your SaveBrain</h1>
       <p className="text-sm text-[var(--muted)] mt-1">Your saves live in <b className="text-[var(--ink)]">your own</b> free Supabase database. Nobody else — including the SaveBrain author — can see them.</p>
 
       <div className="bg-[var(--card)] border border-[var(--line)] rounded-2xl p-5 mt-4">
-        <Step n={1} title="Create a free Supabase account">
-          <a href="https://supabase.com/dashboard/sign-up" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm font-bold text-[var(--accent)] min-h-[40px]">Open supabase.com <ExternalLink size={13} /></a>
-          <span className="text-xs text-[var(--muted)] ml-2">Skip if you already have one.</span>
+        <Step n={1} title="Connect your Supabase account" done={!!mgmt}>
+          {mgmt ? <p className="text-sm text-[var(--muted)]">Connected. SaveBrain can now create your project.</p> : (<>
+            <p className="text-sm text-[var(--muted)]">Supabase is where your saves are stored, free. On the next page, <b className="text-[var(--ink)]">sign in or create a free account</b>, pick your organization and press <b className="text-[var(--ink)]">Authorize</b>.</p>
+            <button onClick={startConnect} disabled={busy} className={primary + " mt-3 w-full sm:w-auto"}>{busy ? <Loader2 size={16} className="animate-spin" /> : <Link2 size={16} />} Connect with Supabase <ArrowRight size={16} /></button>
+          </>)}
+          {!mgmt && (
+            <details className="mt-3 text-sm">
+              <summary className="cursor-pointer text-xs font-bold text-[var(--muted)]">Use an access token instead</summary>
+              <div className="mt-2">
+                <p className="text-sm text-[var(--muted)]"><a href="https://supabase.com/dashboard/account/tokens" target="_blank" rel="noopener noreferrer" className="font-bold text-[var(--accent)] inline-flex items-center gap-1">Generate a token <ExternalLink size={12} /></a> → name it “SaveBrain setup”, set it up like this, then copy it:</p>
+                <ul className="mt-2 text-sm text-[var(--muted)] space-y-1 list-disc pl-5">
+                  <li><b className="text-[var(--ink)]">Expiry:</b> the shortest option. You only need it for these 2 minutes.</li>
+                  <li><b className="text-[var(--ink)]">Access:</b> your organization, with all its projects (needed to create the new project).</li>
+                  <li><b className="text-[var(--ink)]">Permissions:</b> leave everything else off and turn on only these:</li>
+                </ul>
+                <ul className="mt-1.5 grid sm:grid-cols-2 gap-x-4 gap-y-1 text-xs bg-[var(--surface)] border border-[var(--line)] rounded-xl p-3">
+                  {TOKEN_PERMISSIONS.map(([name, level]) => <li key={name} className="flex justify-between gap-2"><span>{name}</span><span className="font-bold">{level}</span></li>)}
+                </ul>
+                <div className="flex flex-wrap gap-2 mt-3">
+                  <input type="password" autoComplete="off" value={token} onChange={e => setToken(e.target.value)} placeholder="sbp_..." className={input + " flex-1 min-w-[200px] mt-0"} />
+                  <button onClick={connectWithToken} disabled={busy || !!mgmt} className={primary}><KeyRound size={16} /> Continue</button>
+                </div>
+              </div>
+            </details>
+          )}
         </Step>
-        <Step n={2} title="Paste an access token" last={!mgmt}>
-          <p className="text-sm text-[var(--muted)]"><a href="https://supabase.com/dashboard/account/tokens" target="_blank" rel="noopener noreferrer" className="font-bold text-[var(--accent)] inline-flex items-center gap-1">Generate a token <ExternalLink size={12} /></a> → name it “SaveBrain setup”, set it up like this, then copy it:</p>
-          <ul className="mt-2 text-sm text-[var(--muted)] space-y-1 list-disc pl-5">
-            <li><b className="text-[var(--ink)]">Expiry:</b> the shortest option. You only need it for these 3 minutes.</li>
-            <li><b className="text-[var(--ink)]">Access:</b> your organization, with all its projects (needed to create the new project).</li>
-            <li><b className="text-[var(--ink)]">Permissions:</b> leave everything else off and turn on only these:</li>
-          </ul>
-          <ul className="mt-1.5 grid sm:grid-cols-2 gap-x-4 gap-y-1 text-xs bg-[var(--surface)] border border-[var(--line)] rounded-xl p-3">
-            {TOKEN_PERMISSIONS.map(([name, level]) => <li key={name} className="flex justify-between gap-2"><span>{name}</span><span className="font-bold">{level}</span></li>)}
-          </ul>
-          <div className="flex flex-wrap gap-2 mt-3">
-            <input type="password" autoComplete="off" value={token} onChange={e => setToken(e.target.value)} placeholder="sbp_..." className={input + " flex-1 min-w-[200px] mt-0"} />
-            <button onClick={connect} disabled={busy || !!mgmt} className={primary}><KeyRound size={16} /> {mgmt ? "Connected" : "Continue"}</button>
-          </div>
-        </Step>
-        {mgmt && (
-          <Step n={3} title="Choose a project and your SaveBrain login" last>
-            <label className="block text-xs font-bold text-[var(--muted)]">Project</label>
+        <Step n={2} title="Choose your SaveBrain login" last>
+          {!mgmt ? <p className="text-sm text-[var(--muted)]">Available once you're connected.</p> : (<>
+            <p className="text-sm text-[var(--muted)]">You'll use this email and password to open SaveBrain on any device.</p>
+            <label className="block mt-3 text-xs font-bold text-[var(--muted)]">Email</label>
+            <input type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" className={input} />
+            <label className="block mt-3 text-xs font-bold text-[var(--muted)]">Password</label>
+            <input type="password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Min 6 characters" className={input} />
+            <label className="block mt-3 text-xs font-bold text-[var(--muted)]">Where to store your saves</label>
             <select value={project} onChange={e => setProject(e.target.value)} className={input}>
-              <option value="new">✨ Create a new “SaveBrain” project (recommended)</option>
-              {projects.map(p => <option key={p.ref} value={p.ref}>Use existing: {p.name}</option>)}
+              <option value="new">✨ New SaveBrain project</option>
+              {projects.map(p => <option key={p.ref} value={p.ref}>Existing project: {p.name}</option>)}
             </select>
-            {project !== "new" && <p className="text-xs text-[var(--muted)] mt-1">SaveBrain adds its own tables to this project and leaves everything else alone.</p>}
+            <p className="text-xs text-[var(--muted)] mt-1">{project !== "new" ? "SaveBrain adds its own tables to this project and leaves everything else alone." : "Free Supabase plans allow 2 projects. Already at 2? Pick an existing one."}</p>
             {project === "new" && orgs.length > 1 && (<>
               <label className="block mt-3 text-xs font-bold text-[var(--muted)]">Organization</label>
               <select value={org} onChange={e => setOrg(e.target.value)} className={input}>{orgs.map(o => <option key={o.slug} value={o.slug}>{o.name}</option>)}</select>
             </>)}
-            <label className="block mt-3 text-xs font-bold text-[var(--muted)]">Email for SaveBrain</label>
-            <input type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" className={input} />
-            <label className="block mt-3 text-xs font-bold text-[var(--muted)]">Password</label>
-            <input type="password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Min 6 characters" className={input} />
             <button onClick={setup} disabled={busy || done} className={primary + " mt-4 w-full sm:w-auto"}>{busy ? <Loader2 size={16} className="animate-spin" /> : <UserPlus size={16} />} Set up SaveBrain <ArrowRight size={16} /></button>
-          </Step>
-        )}
+          </>)}
+        </Step>
         {log.length > 0 && <ul className="mt-4 space-y-1.5">{log.map((l, i) => (<li key={i} className="flex gap-2 text-sm">{i === log.length - 1 && busy ? <Loader2 size={15} className="animate-spin shrink-0 mt-0.5" /> : <CheckCircle2 size={15} className="text-[var(--green)] shrink-0 mt-0.5" />}<span>{l}</span></li>))}</ul>}
         {msg && <p className="mt-3 text-sm">{msg}</p>}
       </div>
 
-      <div className="mt-4 flex gap-2 items-start text-xs text-[var(--muted)] leading-relaxed"><Lock size={14} className="shrink-0 mt-0.5" /><span>Your token is only sent to api.supabase.com, only kept in this tab, and never saved. When setup is done you can delete it on the tokens page. Already set up SaveBrain on another device? Open the “Connect another device” link from that device instead.</span></div>
+      <div className="mt-4 flex gap-2 items-start text-xs text-[var(--muted)] leading-relaxed"><Lock size={14} className="shrink-0 mt-0.5" /><span>Setup access stays in this tab and is never saved. It reaches Supabase through SaveBrain's small open-source setup proxy, which stores nothing. Already use SaveBrain on another device? Open its “Connect another device” link instead.</span></div>
     </Frame>
   );
 }
 
-function Step({ n, title, last, children }: { n: number; title: string; last?: boolean; children: React.ReactNode }) {
+function Step({ n, title, last, done, children }: { n: number; title: string; last?: boolean; done?: boolean; children: React.ReactNode }) {
   return (
     <div className={`flex gap-3 ${last ? "" : "pb-4 mb-4 border-b border-[var(--line)]"}`}>
-      <span className="w-7 h-7 shrink-0 rounded-full bg-[var(--ink)] text-[var(--surface)] text-xs font-bold flex items-center justify-center">{n}</span>
+      <span className={`w-7 h-7 shrink-0 rounded-full ${done ? "bg-[var(--green)]" : "bg-[var(--ink)]"} text-[var(--surface)] text-xs font-bold flex items-center justify-center`}>{done ? <CheckCircle2 size={15} /> : n}</span>
       <div className="min-w-0 flex-1"><h2 className="font-extrabold">{title}</h2><div className="mt-1">{children}</div></div>
     </div>
   );

@@ -11,15 +11,16 @@ private, prioritized to-do list — with deadlines, reminders and a built-in fak
 
 <br/>
 
-[![Open SaveBrain](https://img.shields.io/badge/Open_SaveBrain-→-111827?style=for-the-badge)](https://medamine-sudo.github.io/savebrain-frontend/)
+[![Open SaveBrain](https://img.shields.io/badge/Open_SaveBrain-→-111827?style=for-the-badge)](https://medamine-sudo.github.io/savebrain/)
 &nbsp;
-[![Deploy](https://img.shields.io/github/actions/workflow/status/MedAmine-SUDO/savebrain-frontend/deploy.yml?branch=main&style=for-the-badge&label=deploy)](https://github.com/MedAmine-SUDO/savebrain-frontend/actions/workflows/deploy.yml)
+[![Deploy](https://img.shields.io/github/actions/workflow/status/MedAmine-SUDO/savebrain/deploy.yml?branch=main&style=for-the-badge&label=deploy)](https://github.com/MedAmine-SUDO/savebrain/actions/workflows/deploy.yml)
 
 ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3-06B6D4?logo=tailwindcss&logoColor=white)
 ![Supabase](https://img.shields.io/badge/Supabase-your_own_project-3ECF8E?logo=supabase&logoColor=white)
-![Vite](https://img.shields.io/badge/Vite-5-646CFF?logo=vite&logoColor=white)
+![Vite](https://img.shields.io/badge/Vite-6-646CFF?logo=vite&logoColor=white)
+![Cloudflare Workers](https://img.shields.io/badge/Cloudflare_Workers-setup_proxy-F38020?logo=cloudflare&logoColor=white)
 
 <br/>
 
@@ -116,16 +117,15 @@ Meta AI was the first approach that could both **reach** the saves and **underst
 
 <br/>
 
-## 🏁 Get started — about 3 minutes, no coding
+## 🏁 Get started — about 2 minutes, no coding
 
 <table>
 <tr>
 <td width="62%" valign="top">
 
-1. **Open [SaveBrain](https://medamine-sudo.github.io/savebrain-frontend/).**
-2. **Create a free [Supabase](https://supabase.com/dashboard/sign-up) account** (skip if you have one).
-3. **[Generate an access token](https://supabase.com/dashboard/account/tokens)** with the settings below, paste it into SaveBrain and press **Continue**.
-4. **Choose an email and password** for SaveBrain and press **Set up SaveBrain**.
+1. **Open [SaveBrain](https://medamine-sudo.github.io/savebrain/) and press Connect with Supabase.**
+2. **On Supabase's page,** sign in (or create a free account), pick your organization and press **Authorize**.
+3. **Back in SaveBrain,** choose an email and password and press **Set up SaveBrain**.
 
 That's it. SaveBrain then, automatically:
 
@@ -135,9 +135,11 @@ That's it. SaveBrain then, automatically:
 - locks sign-ups so nobody else can use your project.
 
 <details>
-<summary><b>Access token settings</b></summary>
+<summary><b>Prefer an access token? (fallback)</b></summary>
 
-- **Expiry:** the shortest option. Setup takes about 3 minutes.
+Under **Use an access token instead**, paste a [token](https://supabase.com/dashboard/account/tokens) made with these settings:
+
+- **Expiry:** the shortest option. Setup takes about 2 minutes.
 - **Access:** your organization, with all its projects (needed to create the new project).
 - **Permissions:** leave everything else off and turn on only these:
 
@@ -155,9 +157,9 @@ That's it. SaveBrain then, automatically:
 If one is missing, SaveBrain names it so you can create a new token with it.
 </details>
 
-> 💡 When setup is done you can delete the access token — it's only used once and never stored.
+> 💡 SaveBrain's access is only used during setup and never stored. Afterwards you can remove it in your Supabase account settings (or delete the token, if you used one).
 
-> ℹ️ Free Supabase plans allow 2 active projects. Already at 2? Choose **Use existing** and SaveBrain adds its tables to that project, leaving everything else untouched.
+> ℹ️ Free Supabase plans allow 2 active projects. Already at 2? Choose an **Existing project** and SaveBrain adds its tables to that project, leaving everything else untouched.
 
 </td>
 <td width="38%" valign="top" align="center">
@@ -165,6 +167,29 @@ If one is missing, SaveBrain names it so you can create a new token with it.
 </td>
 </tr>
 </table>
+
+<details>
+<summary><b>How setup works under the hood</b></summary>
+<br/>
+
+Supabase's Management API refuses calls from browsers, so setup goes through a tiny [Cloudflare Worker](proxy/worker.js). It holds SaveBrain's OAuth secret, forwards only the calls setup needs, and stores and logs nothing. After setup, the app talks to **your** project directly; the Worker is never used again.
+
+```mermaid
+sequenceDiagram
+    participant U as Your browser
+    participant S as Supabase (login)
+    participant W as Setup proxy (Cloudflare)
+    participant P as Your Supabase project
+    U->>S: Connect with Supabase
+    S-->>U: one-time code
+    U->>W: code → short-lived access
+    W-->>U: access (kept in the tab only)
+    U->>W: create project, tables, sign-in, key
+    W->>P: forwards those calls only
+    U->>P: from now on: your saves, directly
+```
+
+</details>
 
 <br/>
 
@@ -218,11 +243,11 @@ Calendar alerts work even when SaveBrain is closed. Add new deadlines to your ca
 
 | | |
 | --- | --- |
-| 🏠 **Your own database** | Each person uses their own free Supabase project. There is no shared backend, and the SaveBrain author can't see your data. |
+| 🏠 **Your own database** | Each person uses their own free Supabase project. Your saves never pass through a SaveBrain server, and the SaveBrain author can't see them. |
 | 🔑 **No keys in this repo** | Nothing secret is committed or deployed. Your browser only stores your project's address and its *publishable* key — the app refuses secret keys. |
 | 🛡️ **Row Level Security** | Every row belongs to a user, and the database only lets signed-in users read their own rows. See [`supabase/schema.sql`](supabase/schema.sql). |
 | 🚪 **Locked sign-ups** | On projects created by setup, sign-ups are disabled once your account exists. |
-| 🎟️ **One-time token** | The setup token is only sent to `api.supabase.com`, kept in the open tab, and never saved. |
+| 🎟️ **One-time access** | Setup access is kept in the open tab and never saved. It reaches Supabase through a tiny [open-source proxy](proxy/worker.js) (Supabase blocks direct browser calls) that only allows setup's calls and stores and logs nothing. |
 
 <br/>
 
@@ -252,6 +277,22 @@ Want a Play Store app? Wrap it with [PWABuilder](https://www.pwabuilder.com) (Tr
 
 SaveBrain gained new features and your database needs the matching columns. In the banner, press **Copy update → Open SQL Editor**, paste, press **Run**, then **Done — reload**.
 It's safe to run more than once and keeps your saves.
+
+</details>
+
+<details>
+<summary><b>🔑 I forgot my password</b></summary>
+<br/>
+
+Still signed in on another device? You don't need it there. Otherwise, set a new one from your Supabase project: open the **SQL Editor**, paste this with your SaveBrain email and a new password, and press **Run**:
+
+```sql
+update auth.users
+set encrypted_password = extensions.crypt('YOUR-NEW-PASSWORD', extensions.gen_salt('bf'))
+where lower(email) = lower('you@example.com');
+```
+
+It should say **1 row affected** (0 means the email doesn't match — check it under **Authentication → Users**). Then sign in with the new password. Your saves aren't touched.
 
 </details>
 
@@ -287,7 +328,8 @@ Use it for a first import and the daily prompt for new saves. A full-history imp
 | Frontend | React 18 · TypeScript · Tailwind CSS · Vite |
 | Icons & QR | lucide-react · qrcode |
 | Data & auth | Supabase (Postgres + Row Level Security + Auth), one project per user |
-| Setup | Supabase Management API, called from the browser during setup |
+| Setup | "Connect with Supabase" (OAuth with PKCE) + the Supabase Management API |
+| Setup proxy | A stateless [Cloudflare Worker](proxy/worker.js): finishes the OAuth login and forwards setup's calls (Supabase blocks them from browsers) |
 | Hosting | GitHub Pages, built and deployed by GitHub Actions |
 
 <details>
@@ -301,9 +343,10 @@ Use it for a first import and the daily prompt for new saves. A full-history imp
 │   ├── components/             # Setup, sign-in, Add Saves, device link, update banner
 │   └── lib/
 │       ├── items.ts            # Meta AI prompt + reply parser, row mapping, dates
-│       ├── setup.ts            # One-time project setup via the Management API
+│       ├── setup.ts            # "Connect with Supabase" + one-time project setup
 │       ├── calendar.ts         # .ics export with alarms
 │       └── config.ts           # Per-browser project config, device links
+├── proxy/                      # Cloudflare Worker used only during setup
 ├── supabase/schema.sql         # Tables, migrations and privacy rules
 ├── public/                     # Icons and web app manifest
 └── .github/workflows/deploy.yml
@@ -316,8 +359,8 @@ Use it for a first import and the daily prompt for new saves. A full-history imp
 ## 💻 Development
 
 ```bash
-git clone https://github.com/MedAmine-SUDO/savebrain-frontend.git
-cd savebrain-frontend
+git clone https://github.com/MedAmine-SUDO/savebrain.git
+cd savebrain
 npm install
 npm run dev      # http://localhost:5173
 npm run build    # type-check + production build in dist/
@@ -326,6 +369,24 @@ npm run build    # type-check + production build in dist/
 Pushing to `main` builds and deploys to GitHub Pages automatically.
 To deploy your own fork, enable **Settings → Pages → Source: GitHub Actions**.
 
+<details>
+<summary><b>Run your own setup proxy (forks)</b></summary>
+<br/>
+
+Setup needs an OAuth app and the small proxy in [`proxy/`](proxy/), because Supabase's Management API refuses calls from browsers.
+
+1. In your Supabase organization, open **Settings → OAuth Apps → Add application**. Use your site's URL as the callback URL and enable: Organizations read, Projects read + write, Database read + write, Auth read + write, Secrets read + write.
+2. Put the Client ID in `proxy/wrangler.toml` (`CLIENT_ID`) and in `src/lib/setup.ts` (`OAUTH_CLIENT_ID`), and your site's origin in `ALLOWED_ORIGINS`.
+3. Deploy the Worker and store the secret:
+   ```bash
+   cd proxy
+   npx wrangler deploy
+   npx wrangler secret put CLIENT_SECRET
+   ```
+4. Build the site with your Worker's address: `VITE_SETUP_PROXY=https://<name>.<you>.workers.dev npm run build` (or change the default in `vite.config.ts`).
+
+</details>
+
 <br/>
 
 ## 🗺️ Roadmap
@@ -333,6 +394,8 @@ To deploy your own fork, enable **Settings → Pages → Source: GitHub Actions*
 - [ ] Import your full history from Instagram / Facebook's official data export
 - [ ] "Analyze next 10" batches that upgrade existing saves with the latest analysis
 - [ ] Push notifications for deadlines, without the calendar step
+- [ ] "Forgot password?" on the sign-in screen
+- [ ] Refresh automatically when you come back to the app, instead of the "Sync Now" button
 
 <br/>
 

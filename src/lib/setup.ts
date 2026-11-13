@@ -5,7 +5,41 @@ import schemaSql from "../../supabase/schema.sql?raw";
 import type { Config } from "./config";
 
 export { schemaSql };
-const MGMT = "https://api.supabase.com/v1";
+// Supabase's Management API blocks browser calls (no CORS), so setup goes through our small proxy (proxy/worker.js).
+const MGMT = __SETUP_PROXY__ + "/v1";
+const OAUTH_CLIENT_ID = "ca281632-e082-48ab-b8ec-81630a7abc82";
+const OAUTH_KEY = "savebrain_oauth"; // PKCE verifier + state, kept in this tab only while Supabase's consent page is open
+
+const b64url = (a: Uint8Array) => btoa(String.fromCharCode(...a)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const randomString = () => b64url(crypto.getRandomValues(new Uint8Array(32)));
+const redirectUri = () => location.origin + location.pathname;
+
+// "Connect with Supabase": send the user to Supabase's consent page (OAuth with PKCE).
+export async function startConnect() {
+  const verifier = randomString(), state = randomString();
+  sessionStorage.setItem(OAUTH_KEY, JSON.stringify({ verifier, state }));
+  const challenge = b64url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))));
+  const q = new URLSearchParams({ client_id: OAUTH_CLIENT_ID, redirect_uri: redirectUri(), response_type: "code", state, code_challenge: challenge, code_challenge_method: "S256" });
+  location.assign("https://api.supabase.com/v1/oauth/authorize?" + q);
+}
+
+// Back from Supabase: swap the one-time code for a short-lived access token. Returns null when this isn't a return from Supabase.
+export async function finishConnect(): Promise<string | null> {
+  const q = new URLSearchParams(location.search);
+  const code = q.get("code"), error = q.get("error");
+  if (!code && !error) return null;
+  history.replaceState(null, "", location.pathname);
+  let saved: { verifier?: string; state?: string } = {};
+  try { saved = JSON.parse(sessionStorage.getItem(OAUTH_KEY) || "{}"); sessionStorage.removeItem(OAUTH_KEY); } catch { /* treated as invalid below */ }
+  if (error) throw new Error(q.get("error_description") || "Supabase access was not granted.");
+  if (!saved.verifier || q.get("state") !== saved.state) throw new Error("This login link is no longer valid. Press “Connect with Supabase” again.");
+  const r = await fetch(__SETUP_PROXY__ + "/oauth/token", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code, code_verifier: saved.verifier, redirect_uri: redirectUri() }) });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok || !body.access_token) throw new Error(body.message || "Could not connect to Supabase.");
+  return body.access_token as string;
+}
+
 export type Org = { slug: string; name: string };
 export type Project = { ref: string; name: string; status: string };
 
