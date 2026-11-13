@@ -89,6 +89,31 @@ flowchart LR
     D --> E["✅ Review, remind,<br/>mark done"]
 ```
 
+### 🤔 Why Meta AI, and not ChatGPT, Claude or Gemini?
+
+| | Meta AI | Other assistants (in my tests) |
+| --- | --- | --- |
+| **Sees your saved posts** | ✅ Native to Instagram & Facebook — your saves are right there | ❌ No access to your account |
+| **Opens a reel / post link** | ✅ Reliably | ❌ Often fails or errors on Instagram reel URLs |
+| **Understands the content** | ✅ The video, the caption and the context | ❌ Can't analyze what it can't open |
+
+Meta AI isn't the "smartest model" choice — it's the only one that **can actually see the data**.
+The prompt does the rest: strict JSON, clear rubrics, and "never invent posts or links".
+
+<details>
+<summary><b>What I tried before landing on Meta AI</b></summary>
+<br/>
+
+- **Make.com + the share sheet** — an HTTP shortcut sent each shared link to a Make.com webhook.
+- **ntfy** — pushing shared links through a notification relay.
+- **General-purpose LLMs** — pasting reel URLs into other assistants.
+
+The first two could move a *link* around, but a link alone says nothing about what's in the reel.
+The LLMs couldn't reliably open Instagram links, let alone understand the video.
+Meta AI was the first approach that could both **reach** the saves and **understand** them.
+
+</details>
+
 <br/>
 
 ## 🏁 Get started — about 3 minutes, no coding

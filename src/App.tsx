@@ -430,7 +430,7 @@ export default function App({ sb, cfg, user }: { sb: SupabaseClient; cfg: Config
                 </div>
               </div>
               <div className="bg-[var(--card)] border border-[var(--line)] rounded-2xl p-5">
-                <h2 className="font-extrabold">How SaveBrain works</h2><p className="text-sm text-[var(--muted)] mt-1 leading-relaxed">Instagram / Facebook do not let apps read the posts you saved, so SaveBrain does not poll them. Meta AI can see your saves: it analyzes them with the SaveBrain prompt, you paste the reply here, and SaveBrain files each one with its summary, steps, urgency and trust score. Nothing is posted on your behalf.</p>
+                <h2 className="font-extrabold">How SaveBrain works</h2><p className="text-sm text-[var(--muted)] mt-1 leading-relaxed">Instagram / Facebook do not let apps read the posts you saved, so SaveBrain does not poll them. Meta AI is built into Instagram and Facebook, so it can see your saves and actually understand reels — other assistants can't reliably open Instagram links. It analyzes your saves with the SaveBrain prompt, you paste the reply here, and SaveBrain files each one with its summary, steps, urgency and trust score. Nothing is posted on your behalf.</p>
               </div>
             </div>
           </section>
