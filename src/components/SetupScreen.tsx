@@ -1,25 +1,13 @@
 import { useEffect, useState } from "react";
-import { ArrowRight, CheckCircle2, ExternalLink, KeyRound, Link2, Loader2, Lock, UserPlus } from "lucide-react";
+import { ArrowRight, CheckCircle2, Link2, Loader2, Lock, UserPlus } from "lucide-react";
 import { Frame } from "./AppIcon";
 import { saveConfig } from "../lib/config";
 import { finishConnect, loadAccount, managementApi, runSetup, startConnect, type Mgmt, type Org, type Project } from "../lib/setup";
 
 const input = "mt-1 w-full border border-[var(--line)] rounded-xl px-3 py-2.5 text-sm bg-[var(--surface)] outline-none min-h-[44px]";
-// Fallback when "Connect with Supabase" isn't possible: the scoped-token permissions setup needs (names as on supabase.com/dashboard/account/tokens).
-const TOKEN_PERMISSIONS = [
-  ["Organizations", "Read"],
-  ["Projects (account-wide)", "Read"],
-  ["Organization Projects", "Read-write"],
-  ["Project Settings", "Read-write"],
-  ["Database", "Read-write"],
-  ["Auth Config", "Read-write"],
-  ["API Keys", "Read-write"],
-  ["API Key Secrets", "Read"],
-];
 const primary ="inline-flex items-center justify-center gap-2 bg-[var(--ink)] text-[var(--surface)] text-sm font-bold px-5 min-h-[48px] rounded-full disabled:opacity-60";
 
 export function SetupScreen() {
-  const [token, setToken] = useState("");
   const [mgmt, setMgmt] = useState<Mgmt | null>(null);
   const [orgs, setOrgs] = useState<Org[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -46,10 +34,6 @@ export function SetupScreen() {
   }
   // Back from Supabase's consent page?
   useEffect(() => { if (/[?&](code|error)=/.test(location.search)) connectAccount(finishConnect); }, []);
-  function connectWithToken() {
-    if (!token.trim().startsWith("sbp_")) { setMsg("That doesn't look like an access token — it should start with sbp_."); return; }
-    connectAccount(async () => token.trim());
-  }
   async function setup() {
     if (!mgmt) return;
     if (!email.trim() || password.length < 6) { setMsg("Enter an email and a password of at least 6 characters."); return; }
@@ -59,7 +43,7 @@ export function SetupScreen() {
       const cfg = await runSetup({ mgmt, orgSlug: org, existingRef: isNew ? createdRef : project, isNew, email: email.trim(), password,
         log: m => setLog(l => [...l, m]), onCreated: setCreatedRef });
       if (!saveConfig(cfg)) throw new Error("Could not save settings in this browser (private mode?).");
-      setMgmt(null); setToken(""); setDone(true);
+      setMgmt(null); setDone(true);
       setLog(l => [...l, "All done! Opening SaveBrain…"]);
       setTimeout(() => location.reload(), 2000);
     } catch (e) { setMsg("❌ " + (e as Error).message + " — press “Set up SaveBrain” again to continue where it stopped."); }
@@ -78,26 +62,6 @@ export function SetupScreen() {
             <p className="text-sm text-[var(--muted)]">Supabase is where your saves are stored, free. On the next page, <b className="text-[var(--ink)]">sign in or create a free account</b>, pick your organization and press <b className="text-[var(--ink)]">Authorize</b>.</p>
             <button onClick={startConnect} disabled={busy} className={primary + " mt-3 w-full sm:w-auto"}>{busy ? <Loader2 size={16} className="animate-spin" /> : <Link2 size={16} />} Connect with Supabase <ArrowRight size={16} /></button>
           </>)}
-          {!mgmt && (
-            <details className="mt-3 text-sm">
-              <summary className="cursor-pointer text-xs font-bold text-[var(--muted)]">Use an access token instead</summary>
-              <div className="mt-2">
-                <p className="text-sm text-[var(--muted)]"><a href="https://supabase.com/dashboard/account/tokens" target="_blank" rel="noopener noreferrer" className="font-bold text-[var(--accent)] inline-flex items-center gap-1">Generate a token <ExternalLink size={12} /></a> → name it “SaveBrain setup”, set it up like this, then copy it:</p>
-                <ul className="mt-2 text-sm text-[var(--muted)] space-y-1 list-disc pl-5">
-                  <li><b className="text-[var(--ink)]">Expiry:</b> the shortest option. You only need it for these 2 minutes.</li>
-                  <li><b className="text-[var(--ink)]">Access:</b> your organization, with all its projects (needed to create the new project).</li>
-                  <li><b className="text-[var(--ink)]">Permissions:</b> leave everything else off and turn on only these:</li>
-                </ul>
-                <ul className="mt-1.5 grid sm:grid-cols-2 gap-x-4 gap-y-1 text-xs bg-[var(--surface)] border border-[var(--line)] rounded-xl p-3">
-                  {TOKEN_PERMISSIONS.map(([name, level]) => <li key={name} className="flex justify-between gap-2"><span>{name}</span><span className="font-bold">{level}</span></li>)}
-                </ul>
-                <div className="flex flex-wrap gap-2 mt-3">
-                  <input type="password" autoComplete="off" value={token} onChange={e => setToken(e.target.value)} placeholder="sbp_..." className={input + " flex-1 min-w-[200px] mt-0"} />
-                  <button onClick={connectWithToken} disabled={busy || !!mgmt} className={primary}><KeyRound size={16} /> Continue</button>
-                </div>
-              </div>
-            </details>
-          )}
         </Step>
         <Step n={2} title="Choose your SaveBrain login" last>
           {!mgmt ? <p className="text-sm text-[var(--muted)]">Available once you're connected.</p> : (<>

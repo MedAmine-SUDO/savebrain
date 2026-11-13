@@ -134,30 +134,7 @@ That's it. SaveBrain then, automatically:
 - configures sign-in and creates your account,
 - locks sign-ups so nobody else can use your project.
 
-<details>
-<summary><b>Prefer an access token? (fallback)</b></summary>
-
-Under **Use an access token instead**, paste a [token](https://supabase.com/dashboard/account/tokens) made with these settings:
-
-- **Expiry:** the shortest option. Setup takes about 2 minutes.
-- **Access:** your organization, with all its projects (needed to create the new project).
-- **Permissions:** leave everything else off and turn on only these:
-
-| Permission | Level |
-|---|---|
-| Organizations | Read |
-| Projects (account-wide) | Read |
-| Organization Projects | Read-write |
-| Project Settings | Read-write |
-| Database | Read-write |
-| Auth Config | Read-write |
-| API Keys | Read-write |
-| API Key Secrets | Read |
-
-If one is missing, SaveBrain names it so you can create a new token with it.
-</details>
-
-> 💡 SaveBrain's access is only used during setup and never stored. Afterwards you can remove it in your Supabase account settings (or delete the token, if you used one).
+> 💡 SaveBrain's access is only used during setup and never stored. Afterwards you can remove it in your Supabase account settings.
 
 > ℹ️ Free Supabase plans allow 2 active projects. Already at 2? Choose an **Existing project** and SaveBrain adds its tables to that project, leaving everything else untouched.
 

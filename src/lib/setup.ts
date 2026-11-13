@@ -1,5 +1,5 @@
 // One-time setup: creates/configures the user's own Supabase project via the Management API.
-// The access token only lives in memory for this tab and is never stored.
+// The access token from "Connect with Supabase" only lives in memory for this tab and is never stored.
 import { createClient } from "@supabase/supabase-js";
 import schemaSql from "../../supabase/schema.sql?raw";
 import type { Config } from "./config";
