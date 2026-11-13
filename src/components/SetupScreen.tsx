@@ -5,7 +5,18 @@ import { saveConfig } from "../lib/config";
 import { loadAccount, managementApi, runSetup, type Mgmt, type Org, type Project } from "../lib/setup";
 
 const input = "mt-1 w-full border border-[var(--line)] rounded-xl px-3 py-2.5 text-sm bg-[var(--surface)] outline-none min-h-[44px]";
-const primary = "inline-flex items-center justify-center gap-2 bg-[var(--ink)] text-[var(--surface)] text-sm font-bold px-5 min-h-[48px] rounded-full disabled:opacity-60";
+// The scoped-token permissions setup needs (names as on supabase.com/dashboard/account/tokens).
+const TOKEN_PERMISSIONS = [
+  ["Organizations", "Read"],
+  ["Projects (account-wide)", "Read"],
+  ["Organization Projects", "Read-write"],
+  ["Project Settings", "Read-write"],
+  ["Database", "Read-write"],
+  ["Auth Config", "Read-write"],
+  ["API Keys", "Read-write"],
+  ["API Key Secrets", "Read"],
+];
+const primary ="inline-flex items-center justify-center gap-2 bg-[var(--ink)] text-[var(--surface)] text-sm font-bold px-5 min-h-[48px] rounded-full disabled:opacity-60";
 
 export function SetupScreen() {
   const [token, setToken] = useState("");
@@ -60,8 +71,16 @@ export function SetupScreen() {
           <span className="text-xs text-[var(--muted)] ml-2">Skip if you already have one.</span>
         </Step>
         <Step n={2} title="Paste an access token" last={!mgmt}>
-          <p className="text-sm text-[var(--muted)]"><a href="https://supabase.com/dashboard/account/tokens" target="_blank" rel="noopener noreferrer" className="font-bold text-[var(--accent)] inline-flex items-center gap-1">Generate a token <ExternalLink size={12} /></a> → name it “SaveBrain setup” → copy it.</p>
-          <div className="flex flex-wrap gap-2 mt-2">
+          <p className="text-sm text-[var(--muted)]"><a href="https://supabase.com/dashboard/account/tokens" target="_blank" rel="noopener noreferrer" className="font-bold text-[var(--accent)] inline-flex items-center gap-1">Generate a token <ExternalLink size={12} /></a> → name it “SaveBrain setup”, set it up like this, then copy it:</p>
+          <ul className="mt-2 text-sm text-[var(--muted)] space-y-1 list-disc pl-5">
+            <li><b className="text-[var(--ink)]">Expiry:</b> the shortest option. You only need it for these 3 minutes.</li>
+            <li><b className="text-[var(--ink)]">Access:</b> your organization, with all its projects (needed to create the new project).</li>
+            <li><b className="text-[var(--ink)]">Permissions:</b> leave everything else off and turn on only these:</li>
+          </ul>
+          <ul className="mt-1.5 grid sm:grid-cols-2 gap-x-4 gap-y-1 text-xs bg-[var(--surface)] border border-[var(--line)] rounded-xl p-3">
+            {TOKEN_PERMISSIONS.map(([name, level]) => <li key={name} className="flex justify-between gap-2"><span>{name}</span><span className="font-bold">{level}</span></li>)}
+          </ul>
+          <div className="flex flex-wrap gap-2 mt-3">
             <input type="password" autoComplete="off" value={token} onChange={e => setToken(e.target.value)} placeholder="sbp_..." className={input + " flex-1 min-w-[200px] mt-0"} />
             <button onClick={connect} disabled={busy || !!mgmt} className={primary}><KeyRound size={16} /> {mgmt ? "Connected" : "Continue"}</button>
           </div>

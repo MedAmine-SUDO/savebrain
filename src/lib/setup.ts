@@ -23,7 +23,10 @@ export function managementApi(token: string) {
   return async function mgmt<T = any>(path: string, opts: RequestInit = {}): Promise<T> {
     const r = await fetch(MGMT + path, { ...opts, headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" } });
     const t = await r.text(); let body: any = null; try { body = t ? JSON.parse(t) : null; } catch { body = t; }
-    if (!r.ok) throw new Error(body?.message || (typeof body === "string" && body) || "Supabase API error " + r.status);
+    // Scoped tokens get a 403 listing what they lack; say exactly which permission to add.
+    const missing: string[] = Array.isArray(body?.missing_permissions) ? body.missing_permissions.map(String) : [];
+    if (r.status === 403 && missing.length) throw new Error("Your token is missing these permissions: " + missing.join(", ") + ". Create a new token with them and paste it again.");
+    if (!r.ok) throw new Error(body?.message ||(typeof body === "string" && body) || "Supabase API error " + r.status);
     return body as T;
   };
 }

@@ -5,7 +5,8 @@ export type Config = { url: string; key: string };
 const CONFIG_KEY = "savebrain_config";
 
 export function validConfig(c: Partial<Config> | null | undefined): c is Config {
-  return !!c && /^https:\/\/[^\s/]+$/i.test(c.url || "") && /^sb_publishable_[\w-]+$/.test(c.key || "");
+  // Only real Supabase projects, so a crafted connect link can't point sign-in at someone else's server.
+  return !!c && /^https:\/\/[a-z0-9]+\.supabase\.co$/.test(c.url || "") && /^sb_publishable_[\w-]+$/.test(c.key || "");
 }
 export function getConfig(): Config | null {
   try { const c = JSON.parse(localStorage.getItem(CONFIG_KEY) || "null"); return validConfig(c) ? { url: c.url, key: c.key } : null; } catch { return null; }
@@ -25,7 +26,14 @@ export function consumeConnectLink() {
   const m = location.hash.match(/^#connect=(.+)$/);
   if (!m) return;
   history.replaceState(null, "", location.pathname + location.search);
-  try { const c = JSON.parse(atob(decodeURIComponent(m[1]))); if (validConfig(c)) saveConfig(c); } catch { /* ignore malformed links */ }
+  try {
+    const c = JSON.parse(atob(decodeURIComponent(m[1])));
+    if (!validConfig(c)) return;
+    const current = getConfig();
+    if (current && current.url !== c.url &&
+      !confirm(`This link connects SaveBrain to a different project (${projectRef(c)}) and replaces this device's current one (${projectRef(current)}). Only continue if you made this link yourself.`)) return;
+    saveConfig({ url: c.url, key: c.key });
+  } catch { /* ignore malformed links */ }
 }
 
 let client: SupabaseClient | null = null;

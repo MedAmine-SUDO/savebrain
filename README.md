@@ -124,7 +124,7 @@ Meta AI was the first approach that could both **reach** the saves and **underst
 
 1. **Open [SaveBrain](https://medamine-sudo.github.io/savebrain-frontend/).**
 2. **Create a free [Supabase](https://supabase.com/dashboard/sign-up) account** (skip if you have one).
-3. **[Generate an access token](https://supabase.com/dashboard/account/tokens)**, paste it into SaveBrain and press **Continue**.
+3. **[Generate an access token](https://supabase.com/dashboard/account/tokens)** with the settings below, paste it into SaveBrain and press **Continue**.
 4. **Choose an email and password** for SaveBrain and press **Set up SaveBrain**.
 
 That's it. SaveBrain then, automatically:
@@ -133,6 +133,27 @@ That's it. SaveBrain then, automatically:
 - sets up the tables and privacy rules,
 - configures sign-in and creates your account,
 - locks sign-ups so nobody else can use your project.
+
+<details>
+<summary><b>Access token settings</b></summary>
+
+- **Expiry:** the shortest option. Setup takes about 3 minutes.
+- **Access:** your organization, with all its projects (needed to create the new project).
+- **Permissions:** leave everything else off and turn on only these:
+
+| Permission | Level |
+|---|---|
+| Organizations | Read |
+| Projects (account-wide) | Read |
+| Organization Projects | Read-write |
+| Project Settings | Read-write |
+| Database | Read-write |
+| Auth Config | Read-write |
+| API Keys | Read-write |
+| API Key Secrets | Read |
+
+If one is missing, SaveBrain names it so you can create a new token with it.
+</details>
 
 > 💡 When setup is done you can delete the access token — it's only used once and never stored.
 

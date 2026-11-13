@@ -1,7 +1,8 @@
 // .ics export: calendar events with alarms, so reminders notify on the phone even when SaveBrain is closed.
 import type { Reminder } from "./types";
 
-const esc = (s: string) => s.replace(/[\;,]/g, m => "\\" + m).replace(/\n/g, "\\n");
+// RFC 5545 text escaping; bare CRs are folded too, so a title can't start a new property line.
+const esc = (s: string) => s.replace(/[\\;,]/g, m => "\\" + m).replace(/\r\n|\r|\n/g, "\\n");
 const compact = (day: string) => day.replace(/-/g, "");
 function nextDay(day: string) {
   const d = new Date(day + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + 1);
